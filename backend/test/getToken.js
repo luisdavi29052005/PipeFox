@@ -1,4 +1,3 @@
-
 import path from 'path';
 import { config } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
@@ -20,20 +19,16 @@ async function getToken(email, password) {
       console.error('❌ ERRO:', error.message);
       process.exit(1);
     }
-    
     if (!data.session) {
       console.error('❌ ERRO: No session returned');
       process.exit(1);
     }
-    
     console.log('✅ Login successful!');
     console.log('📧 Email:', email);
     console.log('🔑 Token:', data.session.access_token);
     console.log('\n💡 Usage:');
     console.log(`TEST_TOKEN="${data.session.access_token}" node test/api-test.js`);
-    
     return data.session.access_token;
-    
   } catch (err) {
     console.error('❌ Unexpected error:', err.message);
     process.exit(1);
@@ -46,8 +41,7 @@ if (!email || !password) {
   process.exit(1);
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
-  getToken(email, password);
-}
+// EXECUTA DIRETO!
+getToken(email, password);
 
 export { getToken };
