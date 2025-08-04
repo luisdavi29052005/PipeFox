@@ -6,3 +6,24 @@ channel = "stable-25_05"
 
 [deployment]
 run = ["sh", "-c", "node index.js"]
+
+[workflows]
+runButton = "Backend Dev Server"
+
+[[workflows.workflow]]
+name = "Backend Dev Server"
+author = 45942358
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && npm install && npx tsx watch src/server.ts"
+
+[[workflows.workflow]]
+name = "Run Tests"
+author = 45942358
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && node test/setup-test-env.js && node test/getToken.js test@example.com password123 && TEST_TOKEN=$(node test/getToken.js test@example.com password123 | grep \"Token:\" | cut -d' ' -f2) node test/api-test.js"

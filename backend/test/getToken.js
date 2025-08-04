@@ -12,9 +12,28 @@ const supabase = createClient(
 );
 
 async function getToken(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return console.log('ERRO:', error.message);
-  console.log(`${email} ->`, data.session.access_token);
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      console.error('❌ ERRO:', error.message);
+      process.exit(1);
+    }
+    
+    if (!data.session) {
+      console.error('❌ ERRO: No session returned');
+      process.exit(1);
+    }
+    
+    console.log('✅ Login successful!');
+    console.log('📧 Email:', email);
+    console.log('🔑 Token:', data.session.access_token);
+    console.log('\n💡 Usage:');
+    console.log(`TEST_TOKEN="${data.session.access_token}" node test/api-test.js`);
+    
+  } catch (err) {
+    console.error('❌ Unexpected error:', err.message);
+    process.exit(1);
+  }
 }
 
 const [,, email, password] = process.argv;
