@@ -1,31 +1,41 @@
 
 import { Request, Response, NextFunction } from 'express';
-import { supabase } from '../src/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
+import { config } from 'dotenv';
+import path from 'path';
+
+// Load environment variables
+config({ path: path.resolve(process.cwd(), '.env') });
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
 
 interface AuthenticatedRequest extends Request {
   user?: any;
 }
 
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized - Missing or invalid token format' });
-  }
-
-  const token = auth.split(' ')[1];
-  
   try {
-    // Verify token with Supabase
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid authorization header' });
+    }
+
+    const token = authHeader.substring(7);
+    
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error || !user) {
-      return res.status(401).json({ error: 'Invalid token' });
+      return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
-    req.user = { id: user.id, email: user.email };
+    req.user = user;
     next();
-  } catch (err) {
-    console.error('Auth error:', err);
-    return res.status(401).json({ error: 'Authentication failed' });
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
   }
 }

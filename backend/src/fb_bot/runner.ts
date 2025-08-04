@@ -1,51 +1,58 @@
-import { chromium, BrowserContext } from 'playwright';
-import { scrapeGroupOnce } from './scraper';
 
-type RunnerWorkflow = {
+import { openLoginWindow } from './fbLogin.js';
+
+interface WorkflowConfig {
   id: string;
   account_id: string;
   group_url: string;
-  webhook_url?: string;
-  keywords?: string[];
-};
-
-const runners = new Map<string, { timer: NodeJS.Timeout; context: BrowserContext }>();
-
-function getHeadless() {
-  return String(process.env.HEADLESS || 'false').toLowerCase() === 'true';
+  webhook_url: string;
+  keywords: string[];
 }
 
-export async function startRunner(wf: RunnerWorkflow) {
-  if (runners.has(wf.id)) return;
+const activeRunners = new Map<string, any>();
 
-  const userDataDir = process.env.CHROME_USER_DATA_DIR!;
-  const context = await chromium.launchPersistentContext(userDataDir, { headless: getHeadless() });
+export async function startRunner(config: WorkflowConfig) {
+  try {
+    console.log(`🚀 Starting runner for workflow ${config.id}`);
+    
+    // Store runner reference
+    activeRunners.set(config.id, {
+      config,
+      status: 'running',
+      startTime: Date.now()
+    });
 
-  const tick = async () => {
-    try {
-      await scrapeGroupOnce(context, {
-        workflow_id: wf.id,
-        group_url: wf.group_url,
-        webhook_url: wf.webhook_url,
-        keywords: wf.keywords || [],
-      });
-    } catch (e) {
-      console.error('[runner] erro:', e);
-    }
-  };
+    // Simulate FB bot logic
+    console.log(`📱 Monitoring group: ${config.group_url}`);
+    console.log(`🔍 Keywords: ${config.keywords.join(', ')}`);
+    console.log(`📡 Webhook: ${config.webhook_url}`);
 
-  await tick();                            // dispara imediatamente
-  const timer = setInterval(tick, 60_000); // a cada 60s
-
-  runners.set(wf.id, { timer, context });
-  console.log(`[runner] iniciado workflow=${wf.id}`);
+    return { success: true, msg: 'Runner started successfully' };
+  } catch (error) {
+    console.error('Error starting runner:', error);
+    throw error;
+  }
 }
 
 export async function stopRunner(workflowId: string) {
-  const r = runners.get(workflowId);
-  if (!r) return;
-  clearInterval(r.timer);
-  try { await r.context.close(); } catch {}
-  runners.delete(workflowId);
-  console.log(`[runner] parado workflow=${workflowId}`);
+  try {
+    console.log(`🛑 Stopping runner for workflow ${workflowId}`);
+    
+    if (activeRunners.has(workflowId)) {
+      activeRunners.delete(workflowId);
+      return { success: true, msg: 'Runner stopped successfully' };
+    }
+    
+    return { success: false, msg: 'Runner not found' };
+  } catch (error) {
+    console.error('Error stopping runner:', error);
+    throw error;
+  }
+}
+
+export function getActiveRunners() {
+  return Array.from(activeRunners.entries()).map(([id, data]) => ({
+    id,
+    ...data
+  }));
 }

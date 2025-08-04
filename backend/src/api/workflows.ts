@@ -1,41 +1,50 @@
+
 import express from 'express';
-import { requireAuth } from '../../security/supabaseAuth';
-import { supabase } from '../supabaseClient';
+import { requireAuth } from '../../security/supabaseAuth.js';
+import { supabase } from '../supabaseClient.js';
+import { validateGroupUrl, validateWebhookUrl, sanitizeKeywords, generateWorkflowId } from '../fb_bot/utils.js';
 
 const router = express.Router();
 
-// Listar workflows do usuário autenticado
+// List workflows
 router.get('/', requireAuth, async (req, res) => {
-  const userId = req.user.id;
-  const { data, error } = await supabase
-    .from('workflows')
-    .select('*')
-    .eq('user_id', userId);
+  try {
+    const userId = req.user.id;
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+    const { data, error } = await supabase
+      .from('workflows')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data || []);
+  } catch (err) {
+    console.error('Error listing workflows:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// Criar workflow
+// Create workflow
 router.post('/', requireAuth, async (req, res) => {
-  const userId = req.user.id;
-  const { account_id, group_url, webhook_url, keywords } = req.body;
-
-  // Validação de entrada
-  if (!account_id || !group_url) {
-    return res.status(400).json({ error: 'account_id and group_url are required' });
-  }
-
-  if (group_url && !group_url.includes('facebook.com/groups/')) {
-    return res.status(400).json({ error: 'Invalid Facebook group URL' });
-  }
-
-  if (webhook_url && !webhook_url.startsWith('http')) {
-    return res.status(400).json({ error: 'Invalid webhook URL' });
-  }
-
   try {
-    // Checa se account existe e é do usuário
+    const userId = req.user.id;
+    const { account_id, group_url, webhook_url, keywords = [] } = req.body;
+
+    // Validation
+    if (!account_id) {
+      return res.status(400).json({ error: 'Account ID is required' });
+    }
+
+    if (!group_url || !validateGroupUrl(group_url)) {
+      return res.status(400).json({ error: 'Valid Facebook group URL is required' });
+    }
+
+    if (webhook_url && !validateWebhookUrl(webhook_url)) {
+      return res.status(400).json({ error: 'Valid webhook URL is required' });
+    }
+
+    // Check if account belongs to user
     const { data: account, error: accountError } = await supabase
       .from('accounts')
       .select('*')
@@ -43,23 +52,28 @@ router.post('/', requireAuth, async (req, res) => {
       .eq('user_id', userId)
       .single();
 
-    if (accountError || !account)
-      return res.status(404).json({ error: 'Account not found!' });
+    if (accountError || !account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    const sanitizedKeywords = sanitizeKeywords(keywords);
 
     const { data, error } = await supabase
       .from('workflows')
-      .insert([{ 
-        account_id, 
-        group_url, 
-        webhook_url: webhook_url || null, 
-        keywords: keywords || [], 
+      .insert([{
+        id: generateWorkflowId(),
         user_id: userId,
+        account_id,
+        group_url,
+        webhook_url,
+        keywords: sanitizedKeywords,
         status: 'created'
       }])
-      .select();
+      .select()
+      .single();
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data[0]);
+    res.json(data);
   } catch (err) {
     console.error('Error creating workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -68,40 +82,39 @@ router.post('/', requireAuth, async (req, res) => {
 
 // Start workflow
 router.post('/:id/start', requireAuth, async (req, res) => {
-  const userId = req.user.id;
-  const workflowId = req.params.id;
-
   try {
-    // Confirma que é do usuário!
+    const userId = req.user.id;
+    const workflowId = req.params.id;
+
     const { data: workflow, error } = await supabase
       .from('workflows')
-      .select('*, accounts(*)')
+      .select(`
+        *,
+        accounts!inner(*)
+      `)
       .eq('id', workflowId)
       .eq('user_id', userId)
       .single();
 
-    if (error || !workflow)
+    if (error || !workflow) {
       return res.status(404).json({ error: 'Workflow not found' });
-
-    // Verifica se a conta está pronta
-    if (workflow.accounts?.status !== 'ready') {
-      return res.status(400).json({ error: 'Account not ready. Please login first.' });
     }
 
-    // Atualiza status
-    const { error: updateError } = await supabase
+    // Check if account is ready
+    if (workflow.accounts.status !== 'ready') {
+      return res.status(400).json({ 
+        error: 'Account must be logged in and ready before starting workflow' 
+      });
+    }
+
+    // Update workflow status
+    await supabase
       .from('workflows')
       .update({ status: 'running' })
       .eq('id', workflowId);
 
-    if (updateError) {
-      return res.status(500).json({ error: 'Failed to update workflow status' });
-    }
-
-    res.json({ msg: 'Workflow started successfully!' });
-
-    // Inicia o runner
-    const { startRunner } = await import('../fb_bot/runner');
+    // Start the runner
+    const { startRunner } = await import('../fb_bot/runner.js');
     await startRunner({
       id: workflow.id,
       account_id: workflow.account_id,
@@ -110,6 +123,7 @@ router.post('/:id/start', requireAuth, async (req, res) => {
       keywords: workflow.keywords
     });
 
+    res.json({ msg: `Workflow ${workflowId} started successfully!` });
   } catch (err) {
     console.error('Error starting workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -118,10 +132,10 @@ router.post('/:id/start', requireAuth, async (req, res) => {
 
 // Stop workflow
 router.post('/:id/stop', requireAuth, async (req, res) => {
-  const userId = req.user.id;
-  const workflowId = req.params.id;
-
   try {
+    const userId = req.user.id;
+    const workflowId = req.params.id;
+
     const { data: workflow, error } = await supabase
       .from('workflows')
       .select('*')
@@ -129,17 +143,21 @@ router.post('/:id/stop', requireAuth, async (req, res) => {
       .eq('user_id', userId)
       .single();
 
-    if (error || !workflow)
+    if (error || !workflow) {
       return res.status(404).json({ error: 'Workflow not found' });
+    }
 
-    // Atualiza status
-    await supabase.from('workflows').update({ status: 'stopped' }).eq('id', workflowId);
+    // Update status
+    await supabase
+      .from('workflows')
+      .update({ status: 'stopped' })
+      .eq('id', workflowId);
 
-    // Para o runner
-    const { stopRunner } = await import('../fb_bot/runner');
+    // Stop the runner
+    const { stopRunner } = await import('../fb_bot/runner.js');
     await stopRunner(workflowId);
 
-    res.json({ msg: 'Workflow stopped successfully!' });
+    res.json({ msg: `Workflow ${workflowId} stopped successfully!` });
   } catch (err) {
     console.error('Error stopping workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
