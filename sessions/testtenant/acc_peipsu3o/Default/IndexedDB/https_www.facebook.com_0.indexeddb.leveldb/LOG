@@ -1,0 +1,6 @@
+2025/08/03-19:00:03.454 6e98 Creating DB C:\Users\Ferrer Studio\Desktop\Projetos Organizados\PipeFox\sessions\testtenant\acc_peipsu3o\Default\IndexedDB\https_www.facebook.com_0.indexeddb.leveldb since it was missing.
+2025/08/03-19:00:03.510 6e98 Reusing MANIFEST C:\Users\Ferrer Studio\Desktop\Projetos Organizados\PipeFox\sessions\testtenant\acc_peipsu3o\Default\IndexedDB\https_www.facebook.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/08/03-19:00:05.455 6e98 Level-0 table #5: started
+2025/08/03-19:00:05.461 6e98 Level-0 table #5: 14435 bytes OK
+2025/08/03-19:00:05.473 6e98 Delete type=0 #3
+2025/08/03-19:00:05.474 6e98 Manual compaction at level-0 from '\x00\x08\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x09\x00\x00\x00' @ 0 : 0; will stop at (end)
