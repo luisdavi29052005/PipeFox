@@ -1,6 +1,8 @@
 
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-require('dotenv').config();
+import { config } from 'dotenv';
+import { supabase } from '../src/supabaseClient.js';
+
+config();
 
 const API_BASE = 'http://localhost:5000/api';
 
@@ -25,6 +27,7 @@ class APITester {
   }
 
   async request(method, endpoint, body = null) {
+    const fetch = (await import('node-fetch')).default;
     const options = {
       method,
       headers: {
@@ -64,6 +67,7 @@ class APITester {
 
     // Test Health endpoint
     await this.test('Health Check', async () => {
+      const fetch = (await import('node-fetch')).default;
       const resp = await fetch('http://localhost:5000/health');
       const data = await resp.json();
       this.assert(resp.status === 200, 'Health check should return 200');
@@ -72,6 +76,7 @@ class APITester {
 
     // Test Authentication
     await this.test('Authentication Required', async () => {
+      const fetch = (await import('node-fetch')).default;
       const resp = await fetch(`${API_BASE}/accounts`);
       this.assert(resp.status === 401, 'Should require authentication');
     });
@@ -154,7 +159,6 @@ class APITester {
     // Simulate account ready
     await this.test('Simulate Account Ready & Start Workflow', async () => {
       // First set account as ready (simulating login completion)
-      const { supabase } = require('../src/supabaseClient');
       await supabase.from('accounts').update({ status: 'ready' }).eq('id', accountId);
       
       const resp = await this.request('POST', `/workflows/${workflowId}/start`);
@@ -174,6 +178,7 @@ class APITester {
     await this.test('Workflow Access Control', async () => {
       // Try to access workflow with different user token (should fail)
       const fakeToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmYWtlLXVzZXIifQ.fake';
+      const fetch = (await import('node-fetch')).default;
       const resp = await fetch(`${API_BASE}/workflows/${workflowId}/start`, {
         method: 'POST',
         headers: {
@@ -217,11 +222,11 @@ async function runTests() {
 }
 
 // Execute tests
-if (require.main === module) {
+if (process.argv[1] === new URL(import.meta.url).pathname) {
   runTests().catch(err => {
     log(colors.red, `Fatal error: ${err.message}`);
     process.exit(1);
   });
 }
 
-module.exports = { APITester };
+export { APITester };

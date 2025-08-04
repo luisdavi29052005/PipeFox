@@ -1,7 +1,9 @@
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
-const { createClient } = require('@supabase/supabase-js');
+import path from 'path';
+import { config } from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
+
+config({ path: path.resolve(process.cwd(), '.env') });
 
 console.log('URL:', process.env.SUPABASE_URL);
 console.log('KEY:', process.env.SUPABASE_ANON_KEY?.slice(0, 20) + '...');
@@ -30,6 +32,8 @@ async function getToken(email, password) {
     console.log('\n💡 Usage:');
     console.log(`TEST_TOKEN="${data.session.access_token}" node test/api-test.js`);
     
+    return data.session.access_token;
+    
   } catch (err) {
     console.error('❌ Unexpected error:', err.message);
     process.exit(1);
@@ -41,4 +45,9 @@ if (!email || !password) {
   console.log('Uso: node test/getToken.js email senha');
   process.exit(1);
 }
-getToken(email, password);
+
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+  getToken(email, password);
+}
+
+export { getToken };

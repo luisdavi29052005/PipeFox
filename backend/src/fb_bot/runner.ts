@@ -53,6 +53,10 @@ export async function stopRunner(workflowId: string) {
 export function getActiveRunners() {
   return Array.from(activeRunners.entries()).map(([id, data]) => ({
     id,
-    ...data
+    config: data.config,
+    status: data.status,
+    startTime: data.startTime
+  }));
+}..data
   }));
 }

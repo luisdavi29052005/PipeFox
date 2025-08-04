@@ -1,31 +1,30 @@
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 console.log('🚀 Starting development server...');
 
-// Check if .env exists
-const envPath = path.join(__dirname, '../.env');
-if (!fs.existsSync(envPath)) {
-  console.error('❌ .env file not found!');
-  console.log('📄 Please copy .env.example to .env and configure your variables');
+const child = spawn('npx', ['tsx', 'watch', 'src/server.ts'], {
+  cwd: join(__dirname, '..'),
+  stdio: 'inherit',
+  shell: true
+});
+
+child.on('error', (error) => {
+  console.error('❌ Failed to start server:', error);
   process.exit(1);
-}
-
-// Start the server with tsx for TypeScript support
-const server = spawn('npx', ['tsx', 'watch', 'src/server.ts'], {
-  cwd: path.join(__dirname, '..'),
-  stdio: 'inherit'
 });
 
-server.on('close', (code) => {
-  console.log(`\n🛑 Server exited with code ${code}`);
+child.on('close', (code) => {
+  console.log(`Server process exited with code ${code}`);
 });
 
-// Handle graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\n⏹️  Shutting down development server...');
-  server.kill('SIGINT');
+  console.log('\n🛑 Shutting down server...');
+  child.kill();
   process.exit(0);
 });

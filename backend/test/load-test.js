@@ -1,6 +1,7 @@
 
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-require('dotenv').config();
+import { config } from 'dotenv';
+
+config();
 
 const API_BASE = 'http://localhost:5000/api';
 
@@ -16,26 +17,38 @@ class LoadTester {
     };
   }
 
-  async request(endpoint) {
+  async request(endpoint, method = 'GET', body = null) {
+    const fetch = (await import('node-fetch')).default;
     const start = Date.now();
+    
     try {
-      const resp = await fetch(`${API_BASE}${endpoint}`, {
+      const options = {
+        method,
         headers: {
           'Authorization': `Bearer ${this.token}`,
           'Content-Type': 'application/json',
         }
-      });
+      };
+
+      if (body) {
+        options.body = JSON.stringify(body);
+      }
+
+      const response = await fetch(`${API_BASE}${endpoint}`, options);
+      const responseTime = Date.now() - start;
       
-      const duration = Date.now() - start;
-      this.results.responseTimes.push(duration);
       this.results.requests++;
+      this.results.responseTimes.push(responseTime);
       
-      if (!resp.ok) {
+      if (!response.ok) {
         this.results.errors++;
       }
+      
+      return response;
     } catch (error) {
       this.results.errors++;
       this.results.requests++;
+      return null;
     }
   }
 
@@ -43,8 +56,22 @@ class LoadTester {
     const endTime = Date.now() + this.duration;
     
     while (Date.now() < endTime) {
-      await this.request('/accounts');
-      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
+      // Simulate different API calls
+      const randomEndpoint = Math.random();
+      
+      if (randomEndpoint < 0.4) {
+        await this.request('/accounts');
+      } else if (randomEndpoint < 0.7) {
+        await this.request('/workflows');
+      } else {
+        // Create account test
+        await this.request('/accounts', 'POST', { 
+          name: `Test Account ${Date.now()}` 
+        });
+      }
+      
+      // Small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
 
@@ -98,8 +125,8 @@ async function runLoadTest() {
   await tester.run();
 }
 
-if (require.main === module) {
+if (process.argv[1] === new URL(import.meta.url).pathname) {
   runLoadTest().catch(console.error);
 }
 
-module.exports = { LoadTester };
+export { LoadTester };
