@@ -31,3 +31,70 @@ async function criarWorkflow() {
 }
 
 criarWorkflow();
+import { config } from 'dotenv';
+import { getToken } from './getToken.js';
+
+config();
+
+const API_BASE = 'http://localhost:5000/api';
+
+async function createWorkflow(email, password) {
+  try {
+    // Get token
+    console.log('🔑 Getting authentication token...');
+    const token = await getToken(email, password);
+    
+    const fetch = (await import('node-fetch')).default;
+    
+    // First create an account
+    console.log('👤 Creating account...');
+    const accountResp = await fetch(`${API_BASE}/accounts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ name: 'Test Account from Script' })
+    });
+    
+    const account = await accountResp.json();
+    console.log('✅ Account created:', account.id);
+    
+    // Then create a workflow
+    console.log('⚡ Creating workflow...');
+    const workflowResp = await fetch(`${API_BASE}/workflows`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        account_id: account.id,
+        group_url: 'https://www.facebook.com/groups/123456789',
+        webhook_url: 'https://webhook.site/test',
+        keywords: ['venda', 'produto', 'oferta']
+      })
+    });
+    
+    const workflow = await workflowResp.json();
+    console.log('✅ Workflow created:', workflow.id);
+    
+    return { account, workflow };
+    
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    process.exit(1);
+  }
+}
+
+const [,, email, password] = process.argv;
+if (!email || !password) {
+  console.log('Uso: node test/criarWorkflow.js email senha');
+  process.exit(1);
+}
+
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+  createWorkflow(email, password);
+}
+
+export { createWorkflow };

@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { requireAuth } from '../../security/supabaseAuth.js';
 import { supabase } from '../supabaseClient.js';

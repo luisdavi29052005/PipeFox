@@ -8,7 +8,9 @@
     "start": "tsx src/server.ts",
     "test": "node test/setup-test-env.js",
     "test:api": "node test/api-test.js",
-    "test:load": "node test/load-test.js"
+    "test:load": "node test/load-test.js",
+    "test:token": "node test/getToken.js",
+    "test:create": "node test/criarWorkflow.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.53.0",

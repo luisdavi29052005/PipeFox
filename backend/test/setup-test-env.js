@@ -1,9 +1,10 @@
 
-const { createClient } = require('@supabase/supabase-js');
-const fs = require('fs');
-const path = require('path');
+import { createClient } from '@supabase/supabase-js';
+import fs from 'fs';
+import path from 'path';
+import { config } from 'dotenv';
 
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+config({ path: path.resolve(process.cwd(), '.env') });
 
 async function setupTestEnvironment() {
   console.log('🔧 Setting up test environment...');
@@ -55,7 +56,7 @@ async function setupTestEnvironment() {
   
   // Check if server is running
   try {
-    const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+    const fetch = (await import('node-fetch')).default;
     const response = await fetch('http://localhost:5000/health');
     if (response.ok) {
       console.log('✅ Server is running');
@@ -74,11 +75,11 @@ async function setupTestEnvironment() {
   console.log('4. Run load tests: TEST_TOKEN=your_token node test/load-test.js');
 }
 
-if (require.main === module) {
+if (process.argv[1] === new URL(import.meta.url).pathname) {
   setupTestEnvironment().catch(err => {
     console.error('Setup failed:', err.message);
     process.exit(1);
   });
 }
 
-module.exports = { setupTestEnvironment };
+export { setupTestEnvironment };
