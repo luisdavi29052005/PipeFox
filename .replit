@@ -17,7 +17,7 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm install "
+args = "cd backend && npm install && npm run dev"
 
 [[workflows.workflow]]
 name = "Run Tests"
@@ -27,3 +27,21 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd backend && node test/setup-test-env.js && node test/getToken.js test@example.com password123 && TEST_TOKEN=$(node test/getToken.js test@example.com password123 | grep \"Token:\" | cut -d' ' -f2) node test/api-test.js"
+
+[[workflows.workflow]]
+name = "Install Dependencies"
+author = 45942358
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && npm install"
+
+[[workflows.workflow]]
+name = "Run All Tests"
+author = 45942358
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && npm run test && echo \"Get token first:\" && node test/getToken.js test@example.com password123"

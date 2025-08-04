@@ -71,6 +71,13 @@ class LoadTester {
     console.log(`   Avg Response Time: ${avgResponseTime.toFixed(2)}ms`);
     console.log(`   Min Response Time: ${minResponseTime}ms`);
     console.log(`   Max Response Time: ${maxResponseTime}ms`);
+
+    if (errorRate > 5) {
+      console.log('⚠️  High error rate detected');
+    }
+    if (avgResponseTime > 1000) {
+      console.log('⚠️  High response times detected');
+    }
   }
 }
 
@@ -79,6 +86,7 @@ async function runLoadTest() {
   
   if (!token) {
     console.error('ERROR: TEST_TOKEN environment variable is required');
+    console.log('Get token: node test/getToken.js email password');
     process.exit(1);
   }
 
@@ -93,3 +101,5 @@ async function runLoadTest() {
 if (require.main === module) {
   runLoadTest().catch(console.error);
 }
+
+module.exports = { LoadTester };
