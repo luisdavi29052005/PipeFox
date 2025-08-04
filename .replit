@@ -17,7 +17,7 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd backend && npm install && npx tsx watch src/server.ts"
+args = "npm install "
 
 [[workflows.workflow]]
 name = "Run Tests"
