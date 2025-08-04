@@ -1,24 +1,31 @@
+
 import { Request, Response, NextFunction } from 'express';
+import { supabase } from '../src/supabaseClient';
 
 interface AuthenticatedRequest extends Request {
   user?: any;
 }
 
-export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized - Missing or invalid token format' });
+  }
 
   const token = auth.split(' ')[1];
+  
   try {
-    const base64Payload = token.split('.')[1];
-    const payloadString = Buffer.from(base64Payload, 'base64').toString();
-    const payload = JSON.parse(payloadString);
+    // Verify token with Supabase
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
 
-    if (!payload.sub) return res.status(401).json({ error: 'Invalid token payload' });
-
-    req.user = { id: payload.sub, email: payload.email || null };
+    req.user = { id: user.id, email: user.email };
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
+    console.error('Auth error:', err);
+    return res.status(401).json({ error: 'Authentication failed' });
   }
 }

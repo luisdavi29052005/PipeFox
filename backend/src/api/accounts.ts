@@ -24,16 +24,30 @@ router.get('/', requireAuth, async (req, res) => {
 /* -------------------------------------------------------------------- */
 router.post('/', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const { name }  = req.body;
+  const { name } = req.body;
 
-  const { data, error } = await supabase
-    .from('accounts')
-    .insert([{ name, status: 'not_ready', user_id: userId }]) // grava owner
-    .select()
-    .single();                                 // devolve só a nova linha
+  // Validação
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Account name is required' });
+  }
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  if (name.length > 100) {
+    return res.status(400).json({ error: 'Account name too long (max 100 characters)' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('accounts')
+      .insert([{ name: name.trim(), status: 'not_ready', user_id: userId }])
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    console.error('Error creating account:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 /* -------------------------------------------------------------------- */
