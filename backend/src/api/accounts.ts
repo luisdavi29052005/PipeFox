@@ -1,7 +1,7 @@
 import express from 'express';
-import { requireAuth }      from '../supabaseAuth';
-import { supabase }         from '../supabaseClient';
-import { openLoginWindow } from '../fb_bot/fbLogin';
+import { requireAuth }      from '../middleware/requireAuth.js';
+import { supabase }         from '../supabaseClient.js';
+import { openLoginWindow } from '../fb_bot/fbLogin.js';
 
 
 
