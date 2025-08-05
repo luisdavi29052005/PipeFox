@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAuth } from '../../security/supabaseAuth.js';
+import { requireAuth } from '../supabaseAuth.js';
 import { supabase } from '../supabaseClient.js';
 import { validateGroupUrl, validateWebhookUrl, sanitizeKeywords, generateWorkflowId } from '../fb_bot/utils.js';
 
