@@ -1,25 +1,30 @@
+import { v4 as uuid } from 'uuid';
 
+/* ----------------------------------------------------- */
+/*  VALIDADORES                                          */
+/* ----------------------------------------------------- */
 export function validateGroupUrl(url: string): boolean {
-  const fbGroupRegex = /^https:\/\/www\.facebook\.com\/groups\/\d+/;
-  return fbGroupRegex.test(url);
+  return /^https:\/\/www\.facebook\.com\/groups\/\d+/.test(url);
 }
 
 export function validateWebhookUrl(url: string): boolean {
   try {
-    const parsed = new URL(url);
-    return ['http:', 'https:'].includes(parsed.protocol);
+    const u = new URL(url);
+    return ['http:', 'https:'].includes(u.protocol);
   } catch {
     return false;
   }
 }
 
-export function sanitizeKeywords(keywords: string[]): string[] {
+/* Sanitiza a lista (máx. 20) */
+export function sanitizeKeywords(keywords: string[] = []): string[] {
   return keywords
-    .filter(k => k && k.trim().length > 0)
+    .filter(k => k && k.trim())
     .map(k => k.trim().toLowerCase())
-    .slice(0, 20); // Limit to 20 keywords
+    .slice(0, 20);
 }
 
+/* Gera UUID válido */
 export function generateWorkflowId(): string {
-  return Math.random().toString(36).substring(2, 10);
+  return uuid();
 }

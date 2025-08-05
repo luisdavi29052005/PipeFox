@@ -4,7 +4,7 @@ import { getUserDataDir } from './paths'
 export async function openContextForAccount(
   userId: string,
   accountId: string,
-  headless = true
+  headless = false
 ): Promise<BrowserContext> {
   const userDataDir = getUserDataDir(userId, accountId)
   console.log('[context] userDataDir =', userDataDir)
