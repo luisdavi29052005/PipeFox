@@ -107,7 +107,7 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(500).json({ error: nodesErr.message });
     }
 
-    res.json({ ...workflow, nodes });
+    res.json({ workflow, nodes });
   } catch (err) {
     console.error('Error creating workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
