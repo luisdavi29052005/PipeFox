@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
+import cookieParser from 'cookie-parser';
+import authRouter from './api/auth';
 import path from 'path';
 
 // Load environment variables
@@ -11,6 +13,7 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
+app.use(cookieParser());  // <--- ESSENCIAL PARA AUTENTICAÇÃO COM COOKIE!
 app.use(express.json());
 
 // Health check
@@ -23,11 +26,12 @@ app.get('/health', (req, res) => {
 });
 
 // Import routes
-import accountsRouter from './api/accounts.js';
-import workflowsRouter from './api/workflows.js';
+import accountsRouter from './api/accounts';
+import workflowsRouter from './api/workflows';
 
 // API routes
 app.use('/api/accounts', accountsRouter);
+app.use('/api/auth', authRouter);
 app.use('/api/workflows', workflowsRouter);
 
 // Error handling middleware

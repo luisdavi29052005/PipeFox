@@ -167,4 +167,27 @@ router.post('/:id/logout', requireAuth, async (req, res) => {
   res.json({ msg: 'Session status reset.' });
 });
 
+
+// GET /api/accounts/:id
+router.get('/:id', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const accountId = req.params.id;
+  try {
+    const { data, error } = await supabase
+      .from('accounts')
+      .select('*')
+      .eq('id', accountId)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data)
+      return res.status(404).json({ error: 'Account not found' });
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 export default router;
