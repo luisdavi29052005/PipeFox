@@ -1,3 +1,4 @@
+
 import express from 'express';
 import { requireAuth } from '../supabaseAuth.js';
 import { supabase } from '../supabaseClient.js';
@@ -17,16 +18,53 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { data, error } = await supabase
+    const { data: workflows, error } = await supabase
       .from('workflows')
-      .select('*')
+      .select(`
+        *,
+        workflow_nodes(*)
+      `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data ?? []);
+    res.json(workflows ?? []);
   } catch (err) {
     console.error('Error listing workflows:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* GET WORKFLOW NODES                                                 */
+/* ------------------------------------------------------------------ */
+router.get('/:id/nodes', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const workflowId = req.params.id;
+
+    // First verify the workflow belongs to the user
+    const { data: workflow, error: wfError } = await supabase
+      .from('workflows')
+      .select('id')
+      .eq('id', workflowId)
+      .eq('user_id', userId)
+      .single();
+
+    if (wfError || !workflow) {
+      return res.status(404).json({ error: 'Workflow not found' });
+    }
+
+    // Get the nodes
+    const { data: nodes, error } = await supabase
+      .from('workflow_nodes')
+      .select('*')
+      .eq('workflow_id', workflowId);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(nodes ?? []);
+  } catch (err) {
+    console.error('Error getting workflow nodes:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -133,6 +171,8 @@ router.post('/:id/start', requireAuth, async (req, res) => {
       .eq('user_id', userId)
       .single();
 
+    if (error || !workflow) return res.status(404).json({ error: 'Workflow not found' });
+
     // LOG para debug!
     console.dir(workflow, { depth: 5 });
 
@@ -165,7 +205,6 @@ router.post('/:id/start', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
 
 /* ------------------------------------------------------------------ */
 /* STOP WORKFLOW                                                      */
