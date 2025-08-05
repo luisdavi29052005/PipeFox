@@ -1,499 +1,334 @@
 
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
-import { supabase } from '../supabaseClient.js';
-import { getSessionPath } from './paths.js';
-import fs from 'fs-extra';
-import fetch from 'node-fetch';
-import FormData from 'form-data';
+import { chromium, BrowserContext, Page } from 'playwright'
+import { supabase } from '../supabaseClient.js'
+import { openContextForAccount } from './context.js'
+import pLimit from 'p-limit'
 
-interface WorkflowNode {
-  id: string;
-  workflow_id: string;
-  group_name: string;
-  group_url: string;
-  prompt: string;
-  keywords: string[];
-  is_active: boolean;
+interface WorkflowConfig {
+  id: string
+  account_id: string
+  webhook_url?: string
+  keywords: string[]
+  nodes: Array<{
+    id: string
+    group_url: string
+    group_name: string
+    status: string
+  }>
 }
 
-interface Account {
-  id: string;
-  name: string;
-  status: string;
-  session_data: any;
+interface PostData {
+  id: string
+  author: string
+  text: string
+  url: string
+  timestamp: string
+  screenshot?: string
 }
 
-interface Workflow {
-  id: string;
-  user_id: string;
-  account_id: string;
-  name: string;
-  status: string;
-  accounts: Account;
-  workflow_nodes: WorkflowNode[];
-}
+const runningWorkflows = new Map<string, boolean>()
+const limit = pLimit(3) // Limit concurrent group processing
 
-interface RunnerState {
-  browser: Browser | null;
-  context: BrowserContext | null;
-  isRunning: boolean;
-  workflow: Workflow | null;
-}
-
-// Global state for running workflows
-const runningWorkflows = new Map<string, RunnerState>();
-
-export async function startRunner(workflow: Workflow) {
-  const workflowId = workflow.id;
+export async function startRunner(config: WorkflowConfig) {
+  const workflowId = config.id
   
+  if (runningWorkflows.get(workflowId)) {
+    console.log(`[runner] Workflow ${workflowId} already running`)
+    return
+  }
+
+  runningWorkflows.set(workflowId, true)
+  console.log(`[runner] Starting workflow ${workflowId} with ${config.nodes.length} groups`)
+
   try {
-    // Stop if already running
-    if (runningWorkflows.has(workflowId)) {
-      console.log(`[Runner] Stopping existing workflow ${workflowId}`);
-      await stopRunner(workflowId);
-    }
+    // Create workflow run record
+    const { data: workflowRun } = await supabase
+      .from('workflow_runs')
+      .insert({
+        workflow_id: workflowId,
+        started_at: new Date().toISOString(),
+        status: 'running'
+      })
+      .select()
+      .single()
 
-    console.log(`[Runner] Starting workflow ${workflowId} with ${workflow.workflow_nodes.length} nodes`);
-    console.log(`[Runner] Account: ${workflow.accounts.name} (${workflow.accounts.id})`);
-    console.log(`[Runner] Account status: ${workflow.accounts.status}`);
+    const runId = workflowRun?.id
 
-    // Get session data from account
-    const sessionData = workflow.accounts.session_data;
-    console.log(`[Runner] Session data:`, sessionData ? 'Present' : 'Missing');
+    // Process all nodes in parallel with concurrency limit
+    const results = await Promise.allSettled(
+      config.nodes.map(node => 
+        limit(() => processGroupNode(config, node, runId))
+      )
+    )
+
+    // Log results
+    const successful = results.filter(r => r.status === 'fulfilled').length
+    const failed = results.filter(r => r.status === 'rejected').length
     
-    if (!sessionData?.userDataDir || !sessionData?.storageStatePath) {
-      console.error(`[Runner] Missing session data for account ${workflow.accounts.id}`);
-      console.error(`[Runner] userDataDir: ${sessionData?.userDataDir}`);
-      console.error(`[Runner] storageStatePath: ${sessionData?.storageStatePath}`);
-      throw new Error('MISSING_SESSION_DATA: Account session data not found. Please login to Facebook first.');
-    }
+    console.log(`[runner] Workflow ${workflowId} completed: ${successful} successful, ${failed} failed`)
 
-    // Check if session files exist
-    console.log(`[Runner] Checking session directory: ${sessionData.userDataDir}`);
-    if (!await fs.pathExists(sessionData.userDataDir)) {
-      console.error(`[Runner] Session directory does not exist: ${sessionData.userDataDir}`);
-      throw new Error('SESSION_DIR_MISSING: Account session directory not found. Please login to Facebook again.');
-    }
-
-    console.log(`[Runner] Session directory exists, proceeding with browser launch`);
-
-    // Launch browser with session
-    console.log(`[Runner] Launching browser with userDataDir: ${sessionData.userDataDir}`);
-    const browser = await chromium.launchPersistentContext(sessionData.userDataDir, {
-      headless: false, // Changed to false for testing/debugging
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-extensions',
-        '--disable-plugins'
-      ],
-      viewport: { width: 1366, height: 768 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    });
-    
-    console.log(`[Runner] Browser launched successfully for workflow ${workflowId}`);
-
-    const state: RunnerState = {
-      browser,
-      context: browser,
-      isRunning: true,
-      workflow
-    };
-
-    runningWorkflows.set(workflowId, state);
-
-    // Start monitoring each active node
-    const activeNodes = workflow.workflow_nodes.filter(node => node.is_active);
-    
-    // Process nodes in parallel
-    const nodePromises = activeNodes.map(node => processNode(state, node));
-    
-    // Wait for all nodes to complete or until stopped
-    await Promise.allSettled(nodePromises);
-
-    // Clean up if still running
-    if (runningWorkflows.has(workflowId)) {
-      await stopRunner(workflowId);
+    // Update workflow run
+    if (runId) {
+      await supabase
+        .from('workflow_runs')
+        .update({
+          finished_at: new Date().toISOString(),
+          status: failed > 0 ? 'partial_success' : 'success',
+          posts_processed: successful
+        })
+        .eq('id', runId)
     }
 
   } catch (error) {
-    console.error(`[Runner] Error in workflow ${workflowId}:`, error);
-    console.error(`[Runner] Error stack:`, error.stack);
+    console.error(`[runner] Workflow ${workflowId} error:`, error)
     
     // Update workflow status to error
-    try {
-      await supabase
-        .from('workflows')
-        .update({ status: 'error' })
-        .eq('id', workflowId);
-    } catch (dbError) {
-      console.error(`[Runner] Failed to update workflow status:`, dbError);
-    }
-
-    // Clean up
-    await stopRunner(workflowId);
-    throw error;
-  }
-}
-
-async function processNode(state: RunnerState, node: WorkflowNode) {
-  if (!state.isRunning || !state.context) return;
-
-  console.log(`[Runner] Processing node ${node.id} for group: ${node.group_name || node.group_url}`);
-
-  try {
-    const page = await state.context.newPage();
-    
-    // Navigate to Facebook group
-    await page.goto(node.group_url, { waitUntil: 'networkidle' });
-    
-    // Wait for page to load
-    await page.waitForTimeout(5000);
-
-    // Check if we're logged in
-    const isLoggedIn = await page.locator('div[role="main"]').isVisible();
-    if (!isLoggedIn) {
-      console.log(`[Runner] Not logged in for node ${node.id}`);
-      await page.close();
-      return;
-    }
-
-    // Start monitoring posts
-    const checkInterval = 120000; // Check every 2 minutes
-    const processedPosts = new Set<string>(); // Track processed posts
-
-    while (state.isRunning) {
-      try {
-        console.log(`[Runner] Checking for new posts in node ${node.id}...`);
-        
-        // Scroll to load more posts
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(3000);
-
-        // Find posts - more specific selectors for Facebook posts
-        const posts = await page.locator('div[data-pagelet^="FeedUnit_"], div[role="article"]').all();
-        
-        for (const post of posts.slice(0, 5)) { // Process only first 5 posts to avoid overload
-          if (!state.isRunning) break;
-
-          try {
-            // Get a unique identifier for the post to avoid reprocessing
-            const postId = await getPostId(post);
-            if (!postId || processedPosts.has(postId)) continue;
-
-            // Check if post is relevant based on keywords
-            const postText = await getPostText(post);
-            if (!isPostRelevant({ post_text: postText }, node)) continue;
-
-            console.log(`[Runner] Found relevant post ${postId} in node ${node.id}`);
-
-            // Take screenshot of the post
-            const screenshot = await takePostScreenshot(post);
-            if (!screenshot) continue;
-
-            // Send to N8N for processing
-            const n8nResult = await sendToN8N(screenshot, node.prompt);
-            if (!n8nResult) continue;
-
-            // Save as lead in database
-            const leadData = {
-              post_url: await getPostUrl(post) || `${node.group_url}#${postId}`,
-              post_author: n8nResult.author,
-              post_text: n8nResult.text,
-              generated_comment: n8nResult.reply
-            };
-
-            await savePostAsLead(leadData, node);
-
-            // Comment on the post
-            await commentOnPost(post, n8nResult.reply);
-
-            processedPosts.add(postId);
-            console.log(`[Runner] Successfully processed post ${postId} in node ${node.id}`);
-
-            // Wait a bit between posts to avoid rate limits
-            await page.waitForTimeout(10000);
-
-          } catch (err) {
-            console.error(`[Runner] Error processing post in node ${node.id}:`, err);
-          }
-        }
-
-        await page.waitForTimeout(checkInterval);
-
-      } catch (err) {
-        console.error(`[Runner] Error in monitoring loop for node ${node.id}:`, err);
-        await page.waitForTimeout(checkInterval);
-      }
-    }
-
-    await page.close();
-
-  } catch (error) {
-    console.error(`[Runner] Error processing node ${node.id}:`, error);
-  }
-}
-
-async function getPostId(post: any): Promise<string | null> {
-  try {
-    // Try to get post ID from data attributes or URL
-    const postLink = await post.locator('a[href*="/posts/"], a[href*="/permalink/"]').first();
-    const href = await postLink.getAttribute('href');
-    
-    if (href) {
-      const match = href.match(/\/posts\/(\d+)|\/permalink\/(\d+)/);
-      if (match) return match[1] || match[2];
-    }
-
-    // Fallback: use a combination of author and timestamp
-    const author = await post.locator('strong a, h3 a').first().textContent();
-    const timestamp = await post.locator('a[role="link"] span').first().textContent();
-    
-    return author && timestamp ? `${author}_${timestamp}`.replace(/\s+/g, '_') : null;
-  } catch (error) {
-    return null;
-  }
-}
-
-async function getPostText(post: any): Promise<string> {
-  try {
-    const textElement = await post.locator('div[data-ad-preview="message"], div[data-testid="post_message"]').first();
-    return await textElement.textContent() || '';
-  } catch (error) {
-    return '';
-  }
-}
-
-async function getPostUrl(post: any): Promise<string | null> {
-  try {
-    const postLink = await post.locator('a[href*="/posts/"], a[href*="/permalink/"]').first();
-    const href = await postLink.getAttribute('href');
-    return href ? (href.startsWith('http') ? href : `https://www.facebook.com${href}`) : null;
-  } catch (error) {
-    return null;
-  }
-}
-
-async function takePostScreenshot(post: any): Promise<Buffer | null> {
-  try {
-    console.log('[Runner] Taking screenshot of post...');
-    
-    // Scroll the post into view
-    await post.scrollIntoViewIfNeeded();
-    await post.page().waitForTimeout(2000);
-
-    // Take screenshot of the post element
-    const screenshot = await post.screenshot({
-      type: 'png',
-      quality: 90
-    });
-
-    return screenshot;
-  } catch (error) {
-    console.error('[Runner] Error taking screenshot:', error);
-    return null;
-  }
-}
-
-async function sendToN8N(screenshot: Buffer, prompt: string): Promise<any> {
-  try {
-    console.log('[Runner] Sending screenshot to N8N for processing...');
-    
-    const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
-    
-    if (!N8N_WEBHOOK_URL) {
-      console.log('[Runner] N8N_WEBHOOK_URL not configured, skipping N8N processing');
-      // Return mock data for testing
-      return {
-        author: 'Test Author',
-        text: 'Test post content extracted from screenshot',
-        reply: prompt || 'Obrigado pelo seu post interessante!'
-      };
-    }
-    
-    const formData = new FormData();
-    formData.append('image', screenshot, 'post.png');
-    formData.append('prompt', prompt);
-
-    const response = await fetch(N8N_WEBHOOK_URL, {
-      method: 'POST',
-      body: formData,
-      headers: formData.getHeaders()
-    });
-
-    if (!response.ok) {
-      throw new Error(`N8N request failed: ${response.status}`);
-    }
-
-    const result = await response.json();
-    console.log('[Runner] N8N processing result:', result);
-    
-    return result;
-  } catch (error) {
-    console.error('[Runner] Error sending to N8N:', error);
-    // Return mock data as fallback
-    return {
-      author: 'Mock Author',
-      text: 'Mock post content (N8N unavailable)',
-      reply: prompt || 'Obrigado pelo seu post!'
-    };
-  }
-}
-
-async function commentOnPost(post: any, comment: string): Promise<boolean> {
-  try {
-    console.log('[Runner] Attempting to comment on post...');
-    
-    // Look for comment input box
-    const commentBox = await post.locator('div[contenteditable="true"][role="textbox"], textarea[placeholder*="comment"], div[aria-label*="comment"]').first();
-    
-    if (await commentBox.isVisible()) {
-      // Click on the comment box
-      await commentBox.click();
-      await post.page().waitForTimeout(1000);
-
-      // Type the comment
-      await commentBox.fill(comment);
-      await post.page().waitForTimeout(1000);
-
-      // Look for submit button
-      const submitButton = await post.locator('div[role="button"]:has-text("Comment"), button:has-text("Comment"), div[aria-label*="Comment"]').first();
+    await supabase
+      .from('workflows')
+      .update({ status: 'error' })
+      .eq('id', workflowId)
       
-      if (await submitButton.isVisible()) {
-        await submitButton.click();
-        console.log('[Runner] Comment posted successfully');
-        return true;
-      }
-    }
-
-    console.log('[Runner] Could not find comment box or submit button');
-    return false;
-  } catch (error) {
-    console.error('[Runner] Error commenting on post:', error);
-    return false;
+  } finally {
+    runningWorkflows.delete(workflowId)
   }
 }
 
-function isPostRelevant(postData: any, node: WorkflowNode): boolean {
-  if (!postData || !postData.post_text) return false;
-
-  // If no keywords, consider all posts relevant
-  if (!node.keywords || node.keywords.length === 0) return true;
-
-  const postTextLower = postData.post_text.toLowerCase();
+async function processGroupNode(config: WorkflowConfig, node: any, runId?: string) {
+  console.log(`[runner] Processing group: ${node.group_name}`)
   
-  // Check if any keyword matches
-  return node.keywords.some(keyword => 
-    postTextLower.includes(keyword.toLowerCase())
-  );
+  let context: BrowserContext | null = null
+  
+  try {
+    // Get user data from account
+    const { data: account } = await supabase
+      .from('accounts')
+      .select('session_data, user_id')
+      .eq('id', config.account_id)
+      .single()
+
+    if (!account?.session_data?.userDataDir) {
+      throw new Error('Account session data not found')
+    }
+
+    // Open browser context
+    context = await openContextForAccount(account.user_id, config.account_id)
+    const page = await context.newPage()
+
+    // Navigate to group with retry
+    await navigateWithRetry(page, node.group_url)
+
+    // Check if login is required
+    await checkAndHandleLogin(page, config.account_id, account.user_id)
+
+    // Scroll and collect posts
+    const posts = await collectPosts(page, config.keywords)
+    
+    console.log(`[runner] Found ${posts.length} relevant posts in ${node.group_name}`)
+
+    // Process each post
+    for (const post of posts) {
+      await processPost(post, config, node.id, runId)
+    }
+
+  } catch (error) {
+    console.error(`[runner] Error processing group ${node.group_name}:`, error)
+    throw error
+  } finally {
+    if (context) {
+      await context.close()
+    }
+  }
 }
 
-async function savePostAsLead(postData: any, node: WorkflowNode) {
+async function navigateWithRetry(page: Page, url: string, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await page.goto(url, { 
+        waitUntil: 'domcontentloaded', 
+        timeout: 30000 
+      })
+      return
+    } catch (error) {
+      console.log(`[runner] Navigation attempt ${i + 1} failed:`, error)
+      if (i === maxRetries - 1) throw error
+      await page.waitForTimeout(2000 * (i + 1)) // Exponential backoff
+    }
+  }
+}
+
+async function checkAndHandleLogin(page: Page, accountId: string, userId: string) {
   try {
-    // Check if lead already exists
-    const { data: existingLead, error: checkError } = await supabase
+    const loginInput = page.locator('input[name="email"]')
+    if (await loginInput.isVisible({ timeout: 5000 })) {
+      console.log(`[runner] Login required for account ${accountId}`)
+      
+      // Update account status
+      await supabase
+        .from('accounts')
+        .update({ status: 'login_required' })
+        .eq('id', accountId)
+        
+      throw new Error('Account login expired')
+    }
+  } catch (error) {
+    // Login check timeout is expected for logged in accounts
+    if (!error.message.includes('Timeout')) {
+      throw error
+    }
+  }
+}
+
+async function collectPosts(page: Page, keywords: string[]): Promise<PostData[]> {
+  const posts: PostData[] = []
+  const processedUrls = new Set<string>()
+
+  // Scroll and collect posts
+  for (let scroll = 0; scroll < 5; scroll++) {
+    await page.evaluate(() => window.scrollBy(0, 1000))
+    await page.waitForTimeout(2000)
+
+    const postElements = await page.locator('[data-pagelet*="FeedUnit"]').all()
+    
+    for (const postEl of postElements) {
+      try {
+        const postData = await extractPostData(postEl)
+        if (!postData || processedUrls.has(postData.url)) continue
+        
+        processedUrls.add(postData.url)
+        
+        if (isPostRelevant(postData, keywords)) {
+          posts.push(postData)
+        }
+      } catch (error) {
+        console.log('[runner] Error extracting post:', error)
+      }
+    }
+  }
+
+  return posts
+}
+
+async function extractPostData(postElement: any): Promise<PostData | null> {
+  try {
+    const author = await postElement.locator('[data-hovercard-user-id]').first().textContent() || 'Unknown'
+    const text = await postElement.locator('[data-ad-preview="message"]').textContent() || ''
+    const timeElement = await postElement.locator('a[role="link"] abbr').first()
+    const timestamp = await timeElement.getAttribute('data-utime') || Date.now().toString()
+    
+    const linkElement = await postElement.locator('a[href*="/posts/"], a[href*="/groups/"][href*="/permalink/"]').first()
+    const href = await linkElement.getAttribute('href')
+    const url = href ? `https://facebook.com${href}` : ''
+
+    if (!url) return null
+
+    return {
+      id: getPostId(url),
+      author: author.trim(),
+      text: text.trim(),
+      url,
+      timestamp
+    }
+  } catch (error) {
+    return null
+  }
+}
+
+function getPostId(url: string): string {
+  const match = url.match(/(?:posts|permalink)\/(\d+)/)
+  return match ? match[1] : url.split('/').pop() || 'unknown'
+}
+
+function isPostRelevant(post: PostData, keywords: string[]): boolean {
+  if (keywords.length === 0) return true
+  
+  const searchText = `${post.text} ${post.author}`.toLowerCase()
+  return keywords.some(keyword => searchText.includes(keyword.toLowerCase()))
+}
+
+async function processPost(post: PostData, config: WorkflowConfig, nodeId: string, runId?: string) {
+  try {
+    // Check if already processed
+    const { data: existing } = await supabase
       .from('leads')
       .select('id')
-      .eq('node_id', node.id)
-      .eq('post_url', postData.post_url)
-      .maybeSingle();
+      .eq('post_url', post.url)
+      .eq('workflow_node_id', nodeId)
+      .single()
 
-    if (checkError && checkError.code !== 'PGRST116') {
-      console.error('[Runner] Error checking existing lead:', checkError);
-      return;
+    if (existing) {
+      console.log(`[runner] Post already processed: ${post.id}`)
+      return
     }
 
-    if (existingLead) {
-      console.log(`[Runner] Lead already exists for ${postData.post_url}`);
-      return;
-    }
-
-    // Save new lead
-    const { data, error } = await supabase
+    // Save as lead
+    const { data: lead } = await supabase
       .from('leads')
-      .insert([{
-        node_id: node.id,
-        post_url: postData.post_url,
-        post_author: postData.post_author,
-        post_text: postData.post_text,
-        generated_comment: postData.generated_comment,
-        status: 'extracted'
-      }])
+      .insert({
+        workflow_node_id: nodeId,
+        post_url: post.url,
+        post_id: post.id,
+        author: post.author,
+        content: post.text,
+        status: 'captured',
+        run_id: runId
+      })
       .select()
-      .single();
+      .single()
 
-    if (error) {
-      console.error('[Runner] Error saving lead:', error);
-    } else {
-      console.log(`[Runner] New lead saved for node ${node.id}: ${postData.post_url}`);
+    console.log(`[runner] Saved lead: ${post.author} - ${post.text.substring(0, 50)}...`)
+
+    // Send to webhook if configured
+    if (config.webhook_url && lead) {
+      await sendToWebhook(config.webhook_url, post, lead.id)
     }
 
   } catch (error) {
-    console.error('[Runner] Error saving lead:', error);
+    console.error('[runner] Error processing post:', error)
   }
 }
 
-async function generateComment(postData: any, prompt: string): string {
+async function sendToWebhook(webhookUrl: string, post: PostData, leadId: string) {
   try {
-    // Simple template-based comment generation
-    // You can integrate with OpenAI or other AI services here
-    
-    const templates = [
-      `Interessante! ${prompt}`,
-      `Ótimo post! ${prompt}`,
-      `Concordo plenamente. ${prompt}`,
-      `Excelente ponto de vista. ${prompt}`
-    ];
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Lead-ID': leadId
+      },
+      body: JSON.stringify({
+        post_id: post.id,
+        author: post.author,
+        text: post.text,
+        url: post.url,
+        timestamp: post.timestamp,
+        lead_id: leadId
+      })
+    })
 
-    // For now, return a random template with the prompt
-    const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
-    return randomTemplate;
-
+    if (response.ok) {
+      const result = await response.json()
+      console.log(`[runner] Webhook response:`, result)
+      
+      // Update lead with webhook response
+      if (result.author && result.text) {
+        await supabase
+          .from('leads')
+          .update({
+            ai_response: result.text,
+            ai_author: result.author,
+            status: 'processed'
+          })
+          .eq('id', leadId)
+      }
+    } else {
+      console.error('[runner] Webhook failed:', response.status, response.statusText)
+    }
   } catch (error) {
-    console.error('[Runner] Error generating comment:', error);
-    return prompt; // Fallback to just the prompt
+    console.error('[runner] Webhook error:', error)
   }
 }
 
 export async function stopRunner(workflowId: string) {
-  const state = runningWorkflows.get(workflowId);
-  
-  if (state) {
-    console.log(`[Runner] Stopping workflow ${workflowId}`);
-    
-    state.isRunning = false;
-    
-    try {
-      if (state.context) {
-        await state.context.close();
-      }
-    } catch (error) {
-      console.error(`[Runner] Error closing browser context for workflow ${workflowId}:`, error);
-    }
-
-    runningWorkflows.delete(workflowId);
-  }
-
-  // Update workflow status in database
-  await supabase
-    .from('workflows')
-    .update({ status: 'stopped' })
-    .eq('id', workflowId);
+  runningWorkflows.delete(workflowId)
+  console.log(`[runner] Stopped workflow ${workflowId}`)
 }
-
-export async function stopAllRunners() {
-  const workflowIds = Array.from(runningWorkflows.keys());
-  
-  for (const workflowId of workflowIds) {
-    await stopRunner(workflowId);
-  }
-}
-
-// Graceful shutdown
-process.on('SIGINT', stopAllRunners);
-process.on('SIGTERM', stopAllRunners);
