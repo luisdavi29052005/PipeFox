@@ -28,15 +28,22 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { account_id, group_url, webhook_url, keywords = [] } = req.body;
+    const { account_id, webhook_url, keywords = [], groups = [] } = req.body;
 
     // Validation
     if (!account_id) {
       return res.status(400).json({ error: 'Account ID is required' });
     }
 
-    if (!group_url || !validateGroupUrl(group_url)) {
-      return res.status(400).json({ error: 'Valid Facebook group URL is required' });
+    if (!groups || !Array.isArray(groups) || groups.length === 0) {
+      return res.status(400).json({ error: 'At least one group is required' });
+    }
+
+    // Validate all group URLs
+    for (const group of groups) {
+      if (!group.url || !validateGroupUrl(group.url)) {
+        return res.status(400).json({ error: `Invalid Facebook group URL: ${group.url}` });
+      }
     }
 
     if (webhook_url && !validateWebhookUrl(webhook_url)) {
@@ -56,14 +63,15 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const sanitizedKeywords = sanitizeKeywords(keywords);
+    const workflowId = generateWorkflowId();
 
-    const { data, error } = await supabase
+    // Create workflow
+    const { data: workflow, error: workflowError } = await supabase
       .from('workflows')
       .insert([{
-        id: generateWorkflowId(),
+        id: workflowId,
         user_id: userId,
         account_id,
-        group_url,
         webhook_url,
         keywords: sanitizedKeywords,
         status: 'created'
@@ -71,8 +79,29 @@ router.post('/', requireAuth, async (req, res) => {
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+    if (workflowError) return res.status(500).json({ error: workflowError.message });
+
+    // Create workflow nodes for each group
+    const nodes = groups.map(group => ({
+      id: generateWorkflowId(),
+      workflow_id: workflowId,
+      group_url: group.url,
+      group_name: group.name || group.url,
+      status: 'active'
+    }));
+
+    const { data: createdNodes, error: nodesError } = await supabase
+      .from('workflow_nodes')
+      .insert(nodes)
+      .select();
+
+    if (nodesError) {
+      // Cleanup workflow if nodes creation fails
+      await supabase.from('workflows').delete().eq('id', workflowId);
+      return res.status(500).json({ error: nodesError.message });
+    }
+
+    res.json({ ...workflow, nodes: createdNodes });
   } catch (err) {
     console.error('Error creating workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -89,7 +118,8 @@ router.post('/:id/start', requireAuth, async (req, res) => {
       .from('workflows')
       .select(`
         *,
-        accounts!inner(*)
+        accounts!inner(*),
+        workflow_nodes!inner(*)
       `)
       .eq('id', workflowId)
       .eq('user_id', userId)
@@ -106,23 +136,32 @@ router.post('/:id/start', requireAuth, async (req, res) => {
       });
     }
 
+    // Check if workflow has active nodes
+    const activeNodes = workflow.workflow_nodes.filter(node => node.status === 'active');
+    if (activeNodes.length === 0) {
+      return res.status(400).json({ error: 'No active groups found for this workflow' });
+    }
+
     // Update workflow status
     await supabase
       .from('workflows')
       .update({ status: 'running' })
       .eq('id', workflowId);
 
-    // Start the runner
+    // Start the runner with multiple nodes
     const { startRunner } = await import('../fb_bot/runner.js');
     await startRunner({
       id: workflow.id,
       account_id: workflow.account_id,
-      group_url: workflow.group_url,
       webhook_url: workflow.webhook_url,
-      keywords: workflow.keywords
+      keywords: workflow.keywords,
+      nodes: activeNodes
     });
 
-    res.json({ msg: `Workflow ${workflowId} started successfully!` });
+    res.json({ 
+      msg: `Workflow ${workflowId} started successfully!`,
+      groups_count: activeNodes.length 
+    });
   } catch (err) {
     console.error('Error starting workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
