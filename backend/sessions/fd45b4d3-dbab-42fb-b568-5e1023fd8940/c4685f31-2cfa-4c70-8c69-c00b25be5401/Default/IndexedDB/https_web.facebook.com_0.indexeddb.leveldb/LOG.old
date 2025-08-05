@@ -1,6 +1,0 @@
-2025/08/04-09:47:52.483 1f98 Creating DB C:\Users\Ferrer Studio\Desktop\Projetos Organizados\PipeFox-2\PipeFox-1\backend\sessions\fd45b4d3-dbab-42fb-b568-5e1023fd8940\c4685f31-2cfa-4c70-8c69-c00b25be5401\Default\IndexedDB\https_web.facebook.com_0.indexeddb.leveldb since it was missing.
-2025/08/04-09:47:52.491 1f98 Reusing MANIFEST C:\Users\Ferrer Studio\Desktop\Projetos Organizados\PipeFox-2\PipeFox-1\backend\sessions\fd45b4d3-dbab-42fb-b568-5e1023fd8940\c4685f31-2cfa-4c70-8c69-c00b25be5401\Default\IndexedDB\https_web.facebook.com_0.indexeddb.leveldb/MANIFEST-000001
-2025/08/04-09:47:53.657 1f98 Level-0 table #5: started
-2025/08/04-09:47:53.662 1f98 Level-0 table #5: 14580 bytes OK
-2025/08/04-09:47:53.664 1f98 Delete type=0 #3
-2025/08/04-09:47:53.664 1f98 Manual compaction at level-0 from '\x00\x07\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at (end)
