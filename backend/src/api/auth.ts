@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { signUp, signIn, signWithGoogle, sendReset, deleteUser } from '../services/auth.service'
 import { requireAuth } from '../middleware/requireAuth'
+import { supabaseAnon } from '../supabaseClient'
 
 const COOKIE = {
   name: 'auth',
@@ -30,15 +31,34 @@ router.post('/login', async (req, res) => {
   res.json({ user: data.user })
 })
 
-router.get('/google', (req, res) => {
-  const { data } = signWithGoogle(`${process.env.PUBLIC_URL}/api/auth/callback`)
-  res.redirect(data.url)
+router.get('/google', async (req, res) => {
+  try {
+    const { data, error } = await signWithGoogle(`${process.env.PUBLIC_URL}/api/auth/callback`)
+    if (error) {
+      console.error('Google OAuth error:', error)
+      return res.status(500).json({ error: 'Failed to initialize Google OAuth' })
+    }
+    res.redirect(data.url)
+  } catch (err) {
+    console.error('Google OAuth route error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
 })
 
-router.get('/callback', (req, res) => {
-  if (req.query.access_token)
-    res.cookie(COOKIE.name, req.query.access_token as string, COOKIE.opts)
-  res.redirect('/dashboard')
+router.get('/callback', async (req, res) => {
+  try {
+    const { access_token, refresh_token } = req.query
+    
+    if (access_token) {
+      res.cookie(COOKIE.name, access_token as string, COOKIE.opts)
+      res.redirect('/app')
+    } else {
+      res.redirect('/login?error=oauth_failed')
+    }
+  } catch (err) {
+    console.error('OAuth callback error:', err)
+    res.redirect('/login?error=oauth_failed')
+  }
 })
 
 router.post('/logout', requireAuth, (req, res) => {

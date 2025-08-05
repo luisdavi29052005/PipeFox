@@ -1,13 +1,29 @@
-import { supabaseAnon } from '../supabaseClient'
-import { Request, Response, NextFunction } from 'express'
+import { Request, Response, NextFunction } from 'express';
+import { supabaseAnon } from '../supabaseClient';
 
-export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.cookies?.auth || req.headers.authorization?.split(' ')[1]
-  if (!token) return res.status(401).json({ error: 'Unauthorized' })
+interface AuthenticatedRequest extends Request {
+  user?: any;
+}
 
-  const { data, error } = await supabaseAnon.auth.getUser(token)
-  if (error) return res.status(401).json({ error: error.message })
+export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    // Try to get token from cookie first
+    const token = req.cookies.auth || req.headers.authorization?.substring(7);
 
-  req.user = data.user
-  next()
+    if (!token) {
+      return res.status(401).json({ error: 'Missing authentication token' });
+    }
+
+    const { data: { user }, error } = await supabaseAnon.auth.getUser(token);
+
+    if (error || !user) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
+  }
 }

@@ -1,4 +1,7 @@
-export const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+export const apiBase = import.meta.env.VITE_API_URL || 
+  (window.location.hostname.includes('replit') ? 
+    `https://${window.location.hostname}` : 
+    'http://localhost:5000')
 
 type AuthBody = { email: string; password: string }
 
