@@ -1,8 +1,12 @@
-import fetch from 'node-fetch';
+import 'dotenv/config';
 import { describe, it, expect } from 'vitest';
+import fetch from 'node-fetch';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+
+console.log('SUPABASE_URL:', SUPABASE_URL); // Só pra garantir!
+
 
 describe('Supabase Auth - signup e login', () => {
   it('cria usuário e faz login', async () => {
