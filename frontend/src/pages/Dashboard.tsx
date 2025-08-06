@@ -1,11 +1,6 @@
+
 import { useEffect, useState } from 'react'
 import { me, logout, getAccounts, getWorkflows, loginAccount, logoutAccount, createAccount, startWorkflow, stopWorkflow } from '../lib/api'
-import Sidebar from '../components/Sidebar'
-import Header from '../components/Header'
-import StatCard from '../components/StatCard'
-import AccountCard from '../components/AccountCard'
-import ActivityItem from '../components/ActivityItem'
-import WorkflowTable from '../components/WorkflowTable'
 
 async function getWorkflowNodes(workflowId: string) {
   const response = await fetch(`/api/workflows/${workflowId}/nodes`, {
@@ -58,7 +53,6 @@ export default function Dashboard() {
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [activeSection, setActiveSection] = useState('dashboard')
 
   useEffect(() => {
     loadDashboardData()
@@ -175,160 +169,202 @@ export default function Dashboard() {
     }
   }
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'ready': return '🟢'
+      case 'running': return '🟢'
+      case 'not_ready': return '🔴'
+      case 'stopped': return '🔴'
+      case 'logging_in': return '🟡'
+      case 'created': return '🟡'
+      default: return '⚪'
+    }
+  }
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'ready': return 'ready'
+      case 'running': return 'Ativo'
+      case 'not_ready': return 'not_ready'
+      case 'stopped': return 'Parado'
+      case 'logging_in': return 'fazendo login...'
+      case 'created': return 'Criado'
+      default: return status
+    }
+  }
+
   // Calculate metrics
-  const totalLeads = 234
-  const readyAccounts = accounts.filter(a => a.status === 'ready').length
   const activeWorkflows = workflows.filter(w => w.status === 'running').length
-  const totalComments = 212
+  const totalGroups = workflows.reduce((acc, w) => acc + w.workflow_nodes.filter(n => n.is_active).length, 0)
+  const totalKeywords = workflows.reduce((acc, w) => 
+    acc + w.workflow_nodes.reduce((nodeAcc, n) => nodeAcc + (n.keywords?.length || 0), 0), 0
+  )
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-lg text-gray-600">Loading dashboard...</div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-lg">Carregando dashboard...</div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar 
-        activeSection={activeSection}
-        onSectionChange={setActiveSection}
-        userEmail={user?.email}
-        onLogout={handleLogout}
-      />
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border-l-4 border-orange-500">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+                🦊 PipeFox Dashboard
+              </h1>
+              <p className="text-gray-600 mt-1">
+                Olá, {user?.name || user?.email}! 
+                <button 
+                  onClick={handleLogout}
+                  className="ml-2 text-orange-600 hover:text-orange-700 underline text-sm"
+                >
+                  [Logoff]
+                </button>
+              </p>
+            </div>
+            <button
+              onClick={refreshData}
+              disabled={refreshing}
+              className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
+            >
+              {refreshing ? 'Atualizando...' : 'Atualizar'}
+            </button>
+          </div>
+        </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        <Header title={activeSection} />
+        {/* Quick Metrics */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4">=== Métricas rápidas ===</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+            <div>Leads capturados: <span className="font-bold">-</span></div>
+            <div>Novos hoje: <span className="font-bold">-</span></div>
+            <div>Comentários feitos: <span className="font-bold">-</span></div>
+            <div>Grupos ativos: <span className="font-bold">{totalGroups}</span></div>
+            <div>Workflows ativos: <span className="font-bold">{activeWorkflows}</span></div>
+            <div>Total keywords: <span className="font-bold">{totalKeywords}</span></div>
+          </div>
+        </div>
 
-        {/* Dashboard Content */}
-        <main className="flex-1 p-8">
-          {activeSection === 'dashboard' && (
-            <div className="space-y-8">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <StatCard
-                  title="Leads"
-                  value={totalLeads}
-                  icon={
-                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                  }
-                  iconBgColor="bg-blue-100"
-                />
-
-                <StatCard
-                  title="Facebook Accounts"
-                  value={readyAccounts}
-                  icon={
-                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                    </svg>
-                  }
-                  iconBgColor="bg-blue-600"
-                />
-
-                <StatCard
-                  title="Workflows"
-                  value={activeWorkflows}
-                  icon={
-                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                    </svg>
-                  }
-                  iconBgColor="bg-green-100"
-                />
-
-                <StatCard
-                  title="Comments"
-                  value={totalComments}
-                  icon={
-                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                  }
-                  iconBgColor="bg-purple-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Facebook Accounts */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-                  <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="text-lg font-semibold text-gray-900">Facebook Accounts</h3>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {accounts.map(account => (
-                      <AccountCard
-                        key={account.id}
-                        account={account}
-                        onLogin={handleAccountLogin}
-                        onLogout={handleAccountLogout}
-                        showActions={false}
-                      />
-                    ))}
-                  </div>
+        {/* Facebook Accounts */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4">=== Contas do Facebook ===</h2>
+          <div className="space-y-3">
+            {accounts.map(account => (
+              <div key={account.id} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                <div className="flex items-center space-x-3">
+                  <span>{getStatusIcon(account.status)}</span>
+                  <span className="font-medium">{account.name}</span>
+                  <span className="text-sm text-gray-500">({getStatusText(account.status)})</span>
                 </div>
-
-                {/* Activity Feed */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-                  <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="text-lg font-semibold text-gray-900">Activity</h3>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    <ActivityItem type="info" title="Lead created" time="2 hours ago" />
-                    <ActivityItem type="success" title="Email Campaign paused" time="1 day ago" />
-                    <ActivityItem type="warning" title="Import failed for 2 leads" time="3 days ago" />
-                  </div>
+                <div className="space-x-2">
+                  {account.status === 'ready' ? (
+                    <button
+                      onClick={() => handleAccountLogout(account.id)}
+                      className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                    >
+                      Logout
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleAccountLogin(account.id)}
+                      disabled={account.status === 'logging_in'}
+                      className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50"
+                    >
+                      {account.status === 'logging_in' ? 'Logando...' : 'Login'}
+                    </button>
+                  )}
                 </div>
               </div>
-
-              {/* Workflows Table */}
-              <WorkflowTable
-                workflows={workflows}
-                onStart={handleWorkflowStart}
-                onStop={handleWorkflowStop}
-              />
+            ))}
+            <div className="text-center">
+              <button 
+                onClick={handleCreateAccount}
+                className="text-orange-600 hover:text-orange-700 text-sm"
+              >
+                + Conectar nova conta
+              </button>
             </div>
-          )}
+          </div>
+        </div>
 
-          {activeSection === 'accounts' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">Facebook Accounts</h3>
-                  <button 
-                    onClick={handleCreateAccount}
-                    className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
-                  >
-                    + Add Account
-                  </button>
+        {/* Workflows */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4">=== Workflows ===</h2>
+          <div className="space-y-3">
+            {workflows.map(workflow => {
+              const activeNodes = workflow.workflow_nodes.filter(n => n.is_active)
+              const keywordCount = activeNodes.reduce((acc, n) => acc + (n.keywords?.length || 0), 0)
+              
+              return (
+                <div key={workflow.id} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                  <div className="flex items-center space-x-4">
+                    <span>{getStatusIcon(workflow.status)}</span>
+                    <span className="font-medium">{workflow.name}</span>
+                    <span className="text-sm text-gray-500">
+                      {getStatusText(workflow.status)} | {activeNodes.length} grupos | {keywordCount} palavras-chave
+                    </span>
+                  </div>
+                  <div>
+                    {workflow.status === 'running' ? (
+                      <button
+                        onClick={() => handleWorkflowStop(workflow.id)}
+                        className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                        title="Parar workflow"
+                      >
+                        ⏸
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleWorkflowStart(workflow.id)}
+                        className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200"
+                        title="Iniciar workflow"
+                      >
+                        ▶
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="p-6 space-y-4">
-                {accounts.map(account => (
-                  <AccountCard
-                    key={account.id}
-                    account={account}
-                    onLogin={handleAccountLogin}
-                    onLogout={handleAccountLogout}
-                  />
-                ))}
-              </div>
+              )
+            })}
+            <div className="text-center">
+              <button className="text-orange-600 hover:text-orange-700 text-sm">
+                + Novo workflow
+              </button>
             </div>
-          )}
+          </div>
+        </div>
 
-          {(activeSection === 'leads' || activeSection === 'workflows' || activeSection === 'activity' || activeSection === 'settings') && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
-              <div className="text-center">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">{activeSection.charAt(0).toUpperCase() + activeSection.slice(1)}</h3>
-                <p className="text-gray-500">This section is coming soon...</p>
-              </div>
+        {/* Latest Leads */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4">=== Últimos Leads ===</h2>
+          <div className="space-y-3">
+            <div className="text-center py-8 text-gray-500">
+              <p>Nenhum lead capturado ainda.</p>
+              <p className="text-sm mt-2">Os leads aparecerão aqui quando os workflows estiverem ativos.</p>
             </div>
-          )}
-        </main>
+            <div className="text-center">
+              <button className="text-orange-600 hover:text-orange-700 text-sm">
+                Ver todos os leads →
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Logs */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <h2 className="text-lg font-semibold mb-4">=== Logs recentes ===</h2>
+          <div className="space-y-2 text-sm font-mono">
+            <div className="text-center py-4 text-gray-500">
+              Nenhum log disponível ainda.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
