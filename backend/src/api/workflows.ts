@@ -3,6 +3,7 @@ import express from 'express';
 import { requireAuth } from '../supabaseAuth.js';
 import { supabase } from '../supabaseClient.js';
 import { v4 as uuid } from 'uuid';
+import { workflowQueue } from '../queue';
 import {
   validateGroupUrl,
   validateWebhookUrl,
@@ -173,33 +174,30 @@ router.post('/:id/start', requireAuth, async (req, res) => {
 
     if (error || !workflow) return res.status(404).json({ error: 'Workflow not found' });
 
-    // LOG para debug!
-    console.dir(workflow, { depth: 5 });
-
-    // SUPORTE ARRAY ou OBJETO:
-    const accountStatus =
-      Array.isArray(workflow.accounts)
+    const accountStatus = Array.isArray(workflow.accounts)
         ? workflow.accounts[0]?.status
         : workflow.accounts?.status;
 
     if (accountStatus !== 'ready') {
-      return res.status(400).json({ error: 'Account must be logged in and ready before starting workflow' });
+      return res.status(400).json({ error: 'A conta do Facebook precisa estar logada e pronta.' });
     }
 
     const activeNodes = workflow.workflow_nodes.filter((n: any) => n.is_active);
-    if (!activeNodes.length) return res.status(400).json({ error: 'No active groups in workflow' });
+    if (!activeNodes.length) return res.status(400).json({ error: 'Nenhum grupo ativo no workflow.' });
 
-    await supabase.from('workflows').update({ status: 'running' }).eq('id', workflowId);
-
-    const { startRunner } = await import('../fb_bot/runner.js');
-    await startRunner({
+    // Adiciona o job à fila
+    await workflowQueue.add(`workflow:${workflow.id}`, {
       id: workflow.id,
       account_id: workflow.account_id,
       webhook_url: workflow.webhook_url,
       nodes: activeNodes
     });
 
-    res.json({ msg: `Workflow ${workflowId} started successfully!`, groups_count: activeNodes.length });
+    // Atualiza o status no banco
+    await supabase.from('workflows').update({ status: 'running' }).eq('id', workflowId);
+    
+    res.json({ msg: `Workflow ${workflowId} foi enfileirado para execução!` });
+
   } catch (err) {
     console.error('Error starting workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
