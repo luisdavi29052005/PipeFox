@@ -72,7 +72,7 @@ export default function Login() {
       } else {
         await login({ email, password })
         await me()
-        window.location.href = '/app'
+        window.location.href = '/dashboard'
       }
     } catch (err: any) {
       const friendlyMessage = getFriendlyErrorMessage(err?.message || 'Erro desconhecido')

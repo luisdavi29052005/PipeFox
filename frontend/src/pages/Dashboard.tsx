@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { me, logout, getAccounts, getWorkflows, loginAccount, logoutAccount, createAccount, startWorkflow, stopWorkflow } from '../lib/api'
 
 async function getWorkflowNodes(workflowId: string) {
@@ -48,6 +49,7 @@ interface Workflow {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
@@ -106,7 +108,7 @@ export default function Dashboard() {
   const handleLogout = async () => {
     try {
       await logout()
-      window.location.href = '/login'
+      navigate('/login')
     } catch (err) {
       console.error('Logout error:', err)
     }
@@ -305,7 +307,12 @@ export default function Dashboard() {
                 <div key={workflow.id} className="flex items-center justify-between p-3 bg-gray-50 rounded">
                   <div className="flex items-center space-x-4">
                     <span>{getStatusIcon(workflow.status)}</span>
-                    <span className="font-medium">{workflow.name}</span>
+                    <button
+                      onClick={() => navigate(`/workflow/${workflow.id}`)}
+                      className="font-medium text-left hover:text-orange-600 transition-colors"
+                    >
+                      {workflow.name}
+                    </button>
                     <span className="text-sm text-gray-500">
                       {getStatusText(workflow.status)} | {activeNodes.length} grupos | {keywordCount} palavras-chave
                     </span>
@@ -333,7 +340,10 @@ export default function Dashboard() {
               )
             })}
             <div className="text-center">
-              <button className="text-orange-600 hover:text-orange-700 text-sm">
+              <button 
+                onClick={() => navigate('/workflow/create')}
+                className="text-orange-600 hover:text-orange-700 text-sm"
+              >
                 + Novo workflow
               </button>
             </div>
