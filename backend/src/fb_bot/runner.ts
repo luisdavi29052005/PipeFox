@@ -31,18 +31,29 @@ interface PostData {
 }
 
 const runningWorkflows = new Map<string, boolean>();
-const limit = pLimit(3);
+// Removido o limite para permitir maior paralelismo
 
 export async function startRunner(config: WorkflowConfig) {
   const { id: workflowId } = config;
-  if (runningWorkflows.get(workflowId)) return;
+  if (runningWorkflows.get(workflowId)) {
+    console.log(`[runner] Workflow ${workflowId} já está rodando, ignorando.`);
+    return;
+  }
+  
   runningWorkflows.set(workflowId, true);
-  console.log(`[runner] Iniciando workflow ${workflowId}`);
+  console.log(`[runner] Iniciando workflow ${workflowId} com ${config.nodes.length} grupos`);
 
   try {
-    await Promise.allSettled(
-      config.nodes.map(node => limit(() => processGroupNode(config, node)))
+    // Processa todos os grupos em paralelo sem limite rígido
+    const results = await Promise.allSettled(
+      config.nodes.map(node => processGroupNode(config, node))
     );
+    
+    // Log dos resultados
+    const successful = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
+    console.log(`[runner] Workflow ${workflowId}: ${successful} grupos processados com sucesso, ${failed} falharam.`);
+    
   } catch (err) {
     console.error(`[runner] Erro crítico no workflow ${workflowId}:`, err);
   } finally {
@@ -58,7 +69,7 @@ export async function stopRunner(workflowId: string) {
 }
 
 async function processGroupNode(config: WorkflowConfig, node: WorkflowNode) {
-  console.log(`[runner] Processando grupo: ${node.group_name}`);
+  console.log(`[runner] Iniciando processamento do grupo: ${node.group_name}`);
   let context: BrowserContext | null = null;
 
   try {
@@ -70,21 +81,37 @@ async function processGroupNode(config: WorkflowConfig, node: WorkflowNode) {
 
     if (!account) throw new Error('Conta não encontrada');
 
-    context = await openContextForAccount(account.user_id, config.account_id, true);
+    // Cada grupo abre seu próprio contexto/navegador independente
+    context = await openContextForAccount(account.user_id, config.account_id);
     const page = await context.newPage();
+    
+    console.log(`[runner] Abrindo ${node.group_url} para ${node.group_name}`);
     await page.goto(node.group_url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     const posts = await collectPosts(page, node);
     console.log(`[runner] ${posts.length} posts encontrados em ${node.group_name}`);
 
-    for (const post of posts) {
-      await processPost(post.data, post.screenshot, config);
+    // Processa posts em paralelo também
+    if (posts.length > 0) {
+      await Promise.allSettled(
+        posts.map(post => processPost(post.data, post.screenshot, config))
+      );
     }
+    
+    console.log(`[runner] Grupo ${node.group_name} processado com sucesso`);
+    
   } catch (error) {
-     console.error(`[runner] Falha ao processar o grupo ${node.group_name}:`, error)
-  }
-  finally {
-    if (context) await context.close();
+    console.error(`[runner] Falha ao processar o grupo ${node.group_name}:`, error);
+    throw error; // Re-throw para que Promise.allSettled capture
+  } finally {
+    if (context) {
+      try {
+        await context.close();
+        console.log(`[runner] Contexto fechado para ${node.group_name}`);
+      } catch (closeError) {
+        console.error(`[runner] Erro ao fechar contexto para ${node.group_name}:`, closeError);
+      }
+    }
   }
 }
 
