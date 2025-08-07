@@ -3,6 +3,7 @@ import cors from 'cors';
 import { config } from 'dotenv';
 import cookieParser from 'cookie-parser';
 import authRouter from './api/auth';
+import leadsRouter from './api/leads';
 import path from 'path';
 
 // Load environment variables
@@ -38,6 +39,7 @@ import workflowNodesRoutes from './api/workflow-nodes.js';
 // API routes
 app.use('/api/accounts', accountsRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/leads', leadsRouter);
 app.use('/api/workflows', workflowsRouter);
 app.use('/api/workflow-nodes', workflowNodesRoutes);
 
