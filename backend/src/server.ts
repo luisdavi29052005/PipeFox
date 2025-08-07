@@ -23,8 +23,8 @@ app.use(express.json());
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    ok: true, 
+  res.json({
+    ok: true,
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
@@ -33,11 +33,13 @@ app.get('/health', (req, res) => {
 // Import routes
 import accountsRouter from './api/accounts';
 import workflowsRouter from './api/workflows';
+import workflowNodesRoutes from './api/workflow-nodes.js';
 
 // API routes
 app.use('/api/accounts', accountsRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/workflows', workflowsRouter);
+app.use('/api/workflow-nodes', workflowNodesRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

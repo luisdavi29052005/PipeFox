@@ -1,8 +1,12 @@
 {
   "dependencies": {
+    "@supabase/storage-js": "^2.10.4",
     "@supabase/supabase-js": "^2.53.0",
     "dotenv": "^17.2.1",
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "supabase": "^2.34.0"
   }
 }

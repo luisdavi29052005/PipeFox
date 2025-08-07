@@ -1,65 +1,106 @@
-import { chromium } from 'playwright'
-import path from 'path'
-import fs from 'fs-extra'
-import { getUserDataDir } from './paths'
+import { chromium } from 'playwright';
+import { supabase } from '../supabaseClient';
 
 type LoginResult = {
-  userDataDir: string
-  isLogged: boolean
-  storageStatePath: string
-  fbUserId: string | null
-}
+  isLogged: boolean;
+  fbUserId: string | null;
+};
 
 async function getFbUserIdFromCookies(context: any): Promise<string | null> {
   try {
-    const cookies = await context.cookies()
-    const cUser = cookies.find((c: any) => c.name === 'c_user')
-    return cUser?.value || null
+    const cookies = await context.cookies();
+    const cUser = cookies.find((c: any) => c.name === 'c_user');
+    return cUser?.value || null;
   } catch {
-    return null
+    return null;
   }
 }
 
 export async function openLoginWindow(userId: string, accountId: string): Promise<LoginResult> {
-  const userDataDir = getUserDataDir(userId, accountId)
-  const headless = String(process.env.HEADLESS || 'false').toLowerCase() === 'true'
+  const headless = String(process.env.HEADLESS || 'false').toLowerCase() === 'true';
 
-  await fs.ensureDir(userDataDir)
-  console.log('[login] userDataDir =', userDataDir)
-
-  const context = await chromium.launchPersistentContext(userDataDir, {
+  // Browser + contexto não persistente (salvamos o storageState manualmente)
+  const browser = await chromium.launch({
     headless,
     args: [
       '--disable-notifications',
       '--disable-infobars',
-      '--disable-dev-shm-usage'
-    ]
-  })
+      '--disable-dev-shm-usage',
+    ],
+  });
 
-  const page = await context.newPage()
-  await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' })
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
 
-  let fbUserId: string | null = await getFbUserIdFromCookies(context)
-  let isLogged = !!fbUserId
+  let fbUserId: string | null = null;
+  let isLogged = false;
 
-  if (!isLogged) {
-    try {
-      while (!context.isClosed()) {
-        fbUserId = await getFbUserIdFromCookies(context)
-        if (fbUserId) { isLogged = true; break }
-        await page.waitForTimeout(1000)
-      }
-    } catch {}
+  try {
+    // Espera login (cookie c_user) OU fechamento da aba/navegador OU timeout
+    await new Promise<void>((resolve) => {
+      const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutos
+      const timeout = setTimeout(() => {
+        clearInterval(interval);
+        resolve();
+      }, MAX_WAIT_MS);
+
+      const interval = setInterval(async () => {
+        const id = await getFbUserIdFromCookies(context);
+        if (id) {
+          fbUserId = id;
+          isLogged = true;
+          clearInterval(interval);
+          clearTimeout(timeout);
+          resolve();
+        }
+      }, 1000);
+
+      page.on('close', () => {
+        clearInterval(interval);
+        clearTimeout(timeout);
+        resolve();
+      });
+
+      // forma correta para detectar fechamento do browser
+      browser.on('disconnected', () => {
+        clearInterval(interval);
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+  } catch (err) {
+    console.error('[login] Erro durante a espera do login:', err);
   }
 
-  const storageStatePath = path.join(userDataDir, 'storage-state.json')
-  try {
-    const state = await context.storageState()
-    await fs.outputJson(storageStatePath, state, { spaces: 2 })
-  } catch {}
+  // Se logou, salva storageState no Supabase Storage
+  if (isLogged) {
+    try {
+      const storageState = await context.storageState();
+      const storageStateString = JSON.stringify(storageState, null, 2);
+      const storagePath = `${userId}/${accountId}/storage-state.json`;
 
-  // Espera o usuário fechar a janela para concluir
-  await new Promise<void>(resolve => { context.on('close', () => resolve()) })
+      const { error } = await supabase.storage
+        .from('sessions')
+        .upload(storagePath, Buffer.from(storageStateString, 'utf-8'), {
+          contentType: 'application/json',
+          upsert: true,
+        });
 
-  return { userDataDir, isLogged, storageStatePath, fbUserId }
+      if (error) {
+        throw new Error(`Falha ao salvar sessão no storage: ${error.message}`);
+      }
+      console.log(`[login] Sessão salva com sucesso em: ${storagePath}`);
+    } catch (err) {
+      console.error('[login] Falha ao salvar sessão:', err);
+      isLogged = false; // se não conseguiu salvar, considera não logado
+    }
+  }
+
+  await context.close();
+  await browser.close();
+
+  return { isLogged, fbUserId };
 }
+
+export type { LoginResult };
