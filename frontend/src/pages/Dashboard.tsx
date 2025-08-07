@@ -1,19 +1,7 @@
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { me, logout, getAccounts, getWorkflows, loginAccount, logoutAccount, createAccount, startWorkflow, stopWorkflow } from '../lib/api'
-
-async function getWorkflowNodes(workflowId: string) {
-  const response = await fetch(`/api/workflows/${workflowId}/nodes`, {
-    method: 'GET',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
-  if (!response.ok) throw new Error('Failed to fetch workflow nodes')
-  return response.json()
-}
+import { me, logout, getAccounts, getWorkflows, loginAccount, logoutAccount, createAccount, startWorkflow, stopWorkflow, getWorkflowNodes } from '../lib/api'
 
 interface User {
   id: string
