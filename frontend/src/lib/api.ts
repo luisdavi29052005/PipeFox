@@ -3,32 +3,45 @@ export const apiBase =
   (import.meta as any).env?.VITE_API_URL ||
   (window.location.hostname.includes("replit")
     ? `https://${window.location.hostname}`
-    : "http://0.0.0.0:5000");
+    : "http://localhost:5000");
 
-type ReqInit = RequestInit & { json?: any };
+type ReqInit = Omit<RequestInit, 'body'> & { json?: any };
 
+/**
+ * Centralized request function for the API.
+ * Handles JSON body, credentials, and error parsing.
+ */
 async function req(path: string, init: ReqInit = {}) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init.headers || {}),
   };
-  const res = await fetch(`${apiBase}${path}`, {
-    credentials: "include",
+
+  const options: RequestInit = {
+    credentials: "include", // Essential for sending session cookies
     ...init,
     headers,
-    body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
-  });
-  if (!res.ok) {
-    let message = "Erro";
-    try {
-      const txt = await res.text();
-      message = txt || message;
-    } catch {}
-    throw new Error(message);
+  };
+
+  if (init.json) {
+    options.body = JSON.stringify(init.json);
   }
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("application/json")) return res.json();
-  return res.text();
+
+  const res = await fetch(`${apiBase}${path}`, options);
+
+  if (!res.ok) {
+    // Try to parse a JSON error message from the backend, otherwise use a default
+    const errorData = await res.json().catch(() => ({ error: `Request failed with status ${res.status}` }));
+    throw new Error(errorData.error || 'An unknown error occurred');
+  }
+
+  // Handle responses with no content (e.g., DELETE)
+  if (res.status === 204) {
+    return null;
+  }
+
+  // Always expect JSON for successful responses
+  return res.json();
 }
 
 /* =========== AUTH =========== */
@@ -51,7 +64,7 @@ export function deleteAccount() {
   return req("/api/auth/account", { method: "DELETE" });
 }
 export function loginWithGoogle() {
-  // Redireciona para fluxo OAuth no backend
+  // Redirects to the backend OAuth flow
   window.location.href = `${apiBase}/api/auth/google`;
 }
 
@@ -83,9 +96,9 @@ export function createWorkflow(body: {
   name: string;
   account_id: string;
   webhook_url?: string;
-  nodes?: Array<{
-    group_url: string;
-    group_name: string;
+  groups?: Array<{
+    url: string;
+    name: string;
     prompt?: string;
     keywords?: string[];
     is_active?: boolean;

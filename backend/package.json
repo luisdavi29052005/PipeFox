@@ -7,6 +7,7 @@
     "start": "tsx src/server.ts",
     "db:start": "npx supabase start",
     "db:reset": "npx supabase db reset --debug",
+    "worker": "tsx src/worker.ts", 
     "test": "cross-env NODE_ENV=test vitest run",
     "test:watch": "cross-env NODE_ENV=test vitest",
     "test:setup": "node test/setup-test-env.js",

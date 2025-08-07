@@ -1,42 +1,54 @@
 
 import express from 'express';
-import { requireAuth } from '../supabaseAuth.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import { supabase } from '../supabaseClient.js';
 import { v4 as uuid } from 'uuid';
+import { workflowQueue } from '../queue';
 import {
   validateGroupUrl,
+  validateWebhookUrl,
   sanitizeKeywords
 } from '../fb_bot/utils.js';
 
 const router = express.Router();
 
 /* ------------------------------------------------------------------ */
-/* CREATE WORKFLOW NODE                                               */
+/* LISTAR WORKFLOWS                                                   */
 /* ------------------------------------------------------------------ */
-router.post('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const {
-      workflow_id,
-      group_url,
-      group_name,
-      prompt = '',
-      keywords = [],
-      is_active = true
-    } = req.body;
 
-    // Validações básicas
-    if (!workflow_id) return res.status(400).json({ error: 'Workflow ID is required' });
-    if (!group_url) return res.status(400).json({ error: 'Group URL is required' });
-    if (!validateGroupUrl(group_url)) {
-      return res.status(400).json({ error: 'Invalid Facebook group URL' });
-    }
+    const { data: workflows, error } = await supabase
+      .from('workflows')
+      .select(`
+        *,
+        workflow_nodes(*)
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
 
-    // Verifica se o workflow pertence ao usuário
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(workflows ?? []);
+  } catch (err) {
+    console.error('Error listing workflows:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* GET WORKFLOW NODES                                                 */
+/* ------------------------------------------------------------------ */
+router.get('/:id/nodes', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const workflowId = req.params.id;
+
+    // First verify the workflow belongs to the user
     const { data: workflow, error: wfError } = await supabase
       .from('workflows')
       .select('id')
-      .eq('id', workflow_id)
+      .eq('id', workflowId)
       .eq('user_id', userId)
       .single();
 
@@ -44,139 +56,179 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Workflow not found' });
     }
 
-    // Cria o node
-    const { data: node, error } = await supabase
+    // Get the nodes
+    const { data: nodes, error } = await supabase
       .from('workflow_nodes')
+      .select('*')
+      .eq('workflow_id', workflowId);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(nodes ?? []);
+  } catch (err) {
+    console.error('Error getting workflow nodes:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* CRIAR WORKFLOW                                                     */
+/* ------------------------------------------------------------------ */
+router.post('/', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const {
+      account_id,
+      name,
+      webhook_url,
+      keywords = [],
+      groups = []
+    } = req.body;
+
+    // Validações básicas
+    if (!account_id) return res.status(400).json({ error: 'Account ID is required' });
+    if (!name) return res.status(400).json({ error: 'Workflow name is required' });
+    if (!groups.length) return res.status(400).json({ error: 'At least one group is required' });
+
+    for (const g of groups) {
+      if (!g.url || !validateGroupUrl(g.url)) {
+        return res.status(400).json({ error: `Invalid Facebook group URL: ${g.url}` });
+      }
+    }
+    if (webhook_url && !validateWebhookUrl(webhook_url)) {
+      return res.status(400).json({ error: 'Valid webhook URL is required' });
+    }
+
+    // Verifica se a conta pertence ao usuário
+    const { data: account, error: accErr } = await supabase
+      .from('accounts')
+      .select('*')
+      .eq('id', account_id)
+      .eq('user_id', userId)
+      .single();
+
+    if (accErr || !account) return res.status(404).json({ error: 'Account not found' });
+
+    // Cria workflow (UUID gerado pelo banco)
+    const { data: workflow, error: wfErr } = await supabase
+      .from('workflows')
       .insert([
         {
-          id: uuid(),
-          workflow_id,
-          group_url,
-          group_name: group_name || group_url,
-          prompt,
-          keywords: sanitizeKeywords(keywords),
-          is_active
+          user_id: userId,
+          account_id,
+          name,
+          webhook_url,
+          status: 'created'
         }
       ])
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(node);
+    if (wfErr) return res.status(500).json({ error: wfErr.message });
+
+    // Cria nodes
+    const nodesPayload = groups.map(g => ({
+      id: uuid(),
+      workflow_id: workflow.id,
+      group_url: g.url,
+      group_name: g.name || g.url,
+      prompt: g.prompt ?? '',
+      keywords: sanitizeKeywords(g.keywords ?? []),
+      is_active: true
+    }));
+
+    const { data: nodes, error: nodesErr } = await supabase
+      .from('workflow_nodes')
+      .insert(nodesPayload)
+      .select();
+
+    if (nodesErr) {
+      await supabase.from('workflows').delete().eq('id', workflow.id); // rollback
+      return res.status(500).json({ error: nodesErr.message });
+    }
+
+    res.json({ workflow, nodes });
   } catch (err) {
-    console.error('Error creating workflow node:', err);
+    console.error('Error creating workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 /* ------------------------------------------------------------------ */
-/* UPDATE WORKFLOW NODE                                               */
+/* START WORKFLOW                                                     */
 /* ------------------------------------------------------------------ */
-router.put('/:id', requireAuth, async (req, res) => {
+router.post('/:id/start', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const nodeId = req.params.id;
-    const {
-      group_url,
-      group_name,
-      prompt,
-      keywords,
-      is_active
-    } = req.body;
+    const workflowId = req.params.id;
 
-    // Verifica se o node pertence a um workflow do usuário
-    const { data: node, error: nodeError } = await supabase
-      .from('workflow_nodes')
+    const { data: workflow, error } = await supabase
+      .from('workflows')
       .select(`
         *,
-        workflows!inner(user_id)
+        accounts!inner(*),
+        workflow_nodes!inner(*)
       `)
-      .eq('id', nodeId)
+      .eq('id', workflowId)
+      .eq('user_id', userId)
       .single();
 
-    if (nodeError || !node) {
-      return res.status(404).json({ error: 'Node not found' });
+    if (error || !workflow) return res.status(404).json({ error: 'Workflow not found' });
+
+    const accountStatus = Array.isArray(workflow.accounts)
+        ? workflow.accounts[0]?.status
+        : workflow.accounts?.status;
+
+    if (accountStatus !== 'ready') {
+      return res.status(400).json({ error: 'A conta do Facebook precisa estar logada e pronta.' });
     }
 
-    const workflowUserId = Array.isArray(node.workflows) 
-      ? node.workflows[0]?.user_id 
-      : node.workflows?.user_id;
+    const activeNodes = workflow.workflow_nodes.filter((n: any) => n.is_active);
+    if (!activeNodes.length) return res.status(400).json({ error: 'Nenhum grupo ativo no workflow.' });
 
-    if (workflowUserId !== userId) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    // Adiciona o job à fila
+    await workflowQueue.add(`workflow:${workflow.id}`, {
+      id: workflow.id,
+      account_id: workflow.account_id,
+      webhook_url: workflow.webhook_url,
+      nodes: activeNodes
+    });
 
-    // Prepara os dados para atualização
-    const updateData: any = {};
+    // Atualiza o status no banco
+    await supabase.from('workflows').update({ status: 'running' }).eq('id', workflowId);
     
-    if (group_url !== undefined) {
-      if (!validateGroupUrl(group_url)) {
-        return res.status(400).json({ error: 'Invalid Facebook group URL' });
-      }
-      updateData.group_url = group_url;
-    }
-    
-    if (group_name !== undefined) updateData.group_name = group_name;
-    if (prompt !== undefined) updateData.prompt = prompt;
-    if (keywords !== undefined) updateData.keywords = sanitizeKeywords(keywords);
-    if (is_active !== undefined) updateData.is_active = is_active;
+    res.json({ msg: `Workflow ${workflowId} foi enfileirado para execução!` });
 
-    // Atualiza o node
-    const { data: updatedNode, error } = await supabase
-      .from('workflow_nodes')
-      .update(updateData)
-      .eq('id', nodeId)
-      .select()
-      .single();
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(updatedNode);
   } catch (err) {
-    console.error('Error updating workflow node:', err);
+    console.error('Error starting workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 /* ------------------------------------------------------------------ */
-/* DELETE WORKFLOW NODE                                               */
+/* STOP WORKFLOW                                                      */
 /* ------------------------------------------------------------------ */
-router.delete('/:id', requireAuth, async (req, res) => {
+router.post('/:id/stop', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const nodeId = req.params.id;
+    const workflowId = req.params.id;
 
-    // Verifica se o node pertence a um workflow do usuário
-    const { data: node, error: nodeError } = await supabase
-      .from('workflow_nodes')
-      .select(`
-        *,
-        workflows!inner(user_id)
-      `)
-      .eq('id', nodeId)
+    const { data: workflow, error } = await supabase
+      .from('workflows')
+      .select('*')
+      .eq('id', workflowId)
+      .eq('user_id', userId)
       .single();
 
-    if (nodeError || !node) {
-      return res.status(404).json({ error: 'Node not found' });
-    }
+    if (error || !workflow) return res.status(404).json({ error: 'Workflow not found' });
 
-    const workflowUserId = Array.isArray(node.workflows) 
-      ? node.workflows[0]?.user_id 
-      : node.workflows?.user_id;
+    await supabase.from('workflows').update({ status: 'stopped' }).eq('id', workflowId);
 
-    if (workflowUserId !== userId) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const { stopRunner } = await import('../fb_bot/runner.js');
+    await stopRunner(workflowId);
 
-    // Deleta o node
-    const { error } = await supabase
-      .from('workflow_nodes')
-      .delete()
-      .eq('id', nodeId);
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.status(204).send();
+    res.json({ msg: `Workflow ${workflowId} stopped successfully!` });
   } catch (err) {
-    console.error('Error deleting workflow node:', err);
+    console.error('Error stopping workflow:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

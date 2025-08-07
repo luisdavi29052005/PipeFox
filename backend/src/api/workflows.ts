@@ -1,9 +1,8 @@
-
 import express from 'express';
-import { requireAuth } from '../supabaseAuth.js';
+import { requireAuth } from '../middleware/requireAuth.js'; // CORREÇÃO: Usando o middleware correto
 import { supabase } from '../supabaseClient.js';
 import { v4 as uuid } from 'uuid';
-import { workflowQueue } from '../queue';
+import { workflowQueue } from '../queue.js';
 import {
   validateGroupUrl,
   validateWebhookUrl,
@@ -80,7 +79,6 @@ router.post('/', requireAuth, async (req, res) => {
       account_id,
       name,
       webhook_url,
-      keywords = [],
       groups = []
     } = req.body;
 
@@ -126,7 +124,7 @@ router.post('/', requireAuth, async (req, res) => {
     if (wfErr) return res.status(500).json({ error: wfErr.message });
 
     // Cria nodes
-    const nodesPayload = groups.map(g => ({
+    const nodesPayload = groups.map((g: any) => ({
       id: uuid(),
       workflow_id: workflow.id,
       group_url: g.url,
@@ -146,7 +144,7 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(500).json({ error: nodesErr.message });
     }
 
-    res.json({ workflow, nodes });
+    res.json({ ...workflow, workflow_nodes: nodes });
   } catch (err) {
     console.error('Error creating workflow:', err);
     res.status(500).json({ error: 'Internal server error' });

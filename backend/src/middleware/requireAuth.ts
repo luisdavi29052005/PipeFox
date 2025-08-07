@@ -7,7 +7,7 @@ interface AuthenticatedRequest extends Request {
 
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    // Try to get token from cookie first
+    // Try to get token from cookie first, then from authorization header
     const token = req.cookies.auth || req.headers.authorization?.substring(7);
 
     if (!token) {
