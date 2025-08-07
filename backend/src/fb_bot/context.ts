@@ -13,8 +13,15 @@ import os from 'os';
 export async function openContextForAccount(
   userId: string,
   accountId: string,
-  headless = false
+  forceHeadless?: boolean
 ): Promise<BrowserContext> {
+  // Respeita a variável HEADLESS do .env, defaultando para true se não definida
+  // Se forceHeadless for definido, usa esse valor; senão usa o valor do .env
+  const envHeadless = process.env.HEADLESS !== 'false';
+  const isHeadless = forceHeadless !== undefined ? forceHeadless : envHeadless;
+
+  console.log(`[context] Abrindo contexto para conta ${accountId} (headless: ${isHeadless}) - PID: ${process.pid}`);
+
   const storagePath = `${userId}/${accountId}/storage-state.json`;
   const tempSessionPath = path.join(os.tmpdir(), `pipefox_session_${accountId}.json`);
 
@@ -31,7 +38,7 @@ export async function openContextForAccount(
   await fs.outputFile(tempSessionPath, buf);
 
   const browser = await chromium.launch({
-    headless,
+    headless: isHeadless,
     args: [
       '--disable-notifications',
       '--disable-infobars',
