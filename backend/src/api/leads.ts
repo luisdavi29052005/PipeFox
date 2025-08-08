@@ -5,6 +5,35 @@ import { workflowQueue } from '../queue.js'; // Usaremos a mesma fila
 
 const router = express.Router();
 
+// Function to create or update a lead
+export async function upsertLead(nodeId: string, postUrl: string) {
+  try {
+    const { data, error } = await supabase
+      .from('leads')
+      .upsert({
+        node_id: nodeId,
+        post_url: postUrl,
+        status: 'captured',
+        created_at: new Date().toISOString()
+      }, {
+        onConflict: 'post_url',
+        ignoreDuplicates: false
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('Error upserting lead:', error);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Error in upsertLead:', err);
+    return null;
+  }
+}
+
 // Rota que o n8n vai chamar
 // A chave de API é uma forma simples de proteger o endpoint
 router.post('/:id/callback', async (req, res) => {

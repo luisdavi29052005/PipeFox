@@ -9,6 +9,7 @@ export async function sendToN8n(leadId: string, imageBuffer: Buffer, webhookUrl?
 
   const form = new FormData();
   form.append('leadId', leadId);
+    form.append('prompt', prompt);
   form.append('image', imageBuffer, {
     contentType: 'image/png',
     filename: 'post-screenshot.png'
