@@ -2,18 +2,22 @@ import { BrowserContext, Page, Locator } from 'playwright'
 import { supabase } from '../supabaseClient'
 import { openContextForAccount } from './context'
 import { upsertLead } from '../api/leads'
-import FormData from 'form-data';
 import { sanitizeFacebookUrl } from '../utils/sanitizeFacebookUrl'
 import { config as loadEnv } from 'dotenv'
+
 loadEnv()
 
-const ENV_WEBHOOK = process.env.N8N_WEBHOOK_URL || ''
-const POST = 'div[role="feed"] div[role="article"]' // seletor único p/ layout Comet
+/* ---------------------------------- CONSTS --------------------------------- */
+const ENV_WEBHOOK = process.env.N8N_WEBHOOK_URL ?? ''
+/** Seletor único do layout Comet para qualquer post dentro do feed */
+const POST_SELECTOR = 'div[role="feed"] div[role="article"]'
 
+/* --------------------------------- TYPES ----------------------------------- */
 interface WorkflowNode {
   id: string
   group_url: string
   group_name: string
+  prompt: string              // ← agora incluído
   is_active: boolean
   keywords?: string[]
 }
@@ -31,9 +35,10 @@ interface ShotMeta {
   node_id: string
 }
 
+/* ------------------------------ STATE CONTROL ------------------------------ */
 const running = new Map<string, boolean>()
 
-/* === API pública === */
+/* =============================== PUBLIC API ================================ */
 export async function startRunner(cfg: WorkflowConfig) {
   if (running.has(cfg.id)) return
   running.set(cfg.id, true)
@@ -51,13 +56,17 @@ export async function stopRunner(id: string) {
   await supabase.from('workflows').update({ status: 'stopped' }).eq('id', id)
 }
 
-/* === grupo === */
+/* =============================== GROUP LEVEL =============================== */
 async function processGroup(cfg: WorkflowConfig, node: WorkflowNode) {
   console.log(`[runner] grupo: ${node.group_name}`)
   let ctx: BrowserContext | null = null
 
   try {
-    const { data: acc } = await supabase.from('accounts').select('user_id').eq('id', cfg.account_id).single()
+    const { data: acc } = await supabase
+      .from('accounts')
+      .select('user_id')
+      .eq('id', cfg.account_id)
+      .single()
     if (!acc) throw new Error('Conta não encontrada')
 
     ctx = await openContextForAccount(acc.user_id, cfg.account_id)
@@ -67,7 +76,9 @@ async function processGroup(cfg: WorkflowConfig, node: WorkflowNode) {
     const shots = await collectShots(page, node)
 
     if (shots.length) {
-      await Promise.allSettled(shots.map(({ data, png }) => sendShotToN8n(data, png, node.group_name)))
+      await Promise.allSettled(
+        shots.map(({ data, png }) => sendShotToN8n(data, png, node.group_name, node.prompt))
+      )
     } else {
       console.log('[runner] nenhum post novo')
     }
@@ -78,7 +89,7 @@ async function processGroup(cfg: WorkflowConfig, node: WorkflowNode) {
   }
 }
 
-/* === coleta de screenshots === */
+/* ========================= SCREENSHOT COLLECTION ========================== */
 async function collectShots(page: Page, node: WorkflowNode) {
   const MAX_EMPTY = 3
   const collected: { data: ShotMeta; png: Buffer }[] = []
@@ -89,11 +100,11 @@ async function collectShots(page: Page, node: WorkflowNode) {
 
   for (;;) {
     await Promise.race([
-      page.waitForSelector(`${POST}:not([data-pipefox])`, { timeout: 15_000 }).catch(() => {}),
+      page.waitForSelector(`${POST_SELECTOR}:not([data-pipefox])`, { timeout: 15_000 }).catch(() => {}),
       page.waitForTimeout(4_000)
     ])
 
-    const handles = await page.locator(`${POST}:not([data-pipefox])`).elementHandles()
+    const handles = await page.locator(`${POST_SELECTOR}:not([data-pipefox])`).elementHandles()
     if (!handles.length) {
       if (++empty >= MAX_EMPTY) break
     } else empty = 0
@@ -107,7 +118,7 @@ async function collectShots(page: Page, node: WorkflowNode) {
         const png = await el.screenshot({ type: 'png' })
         const meta = await makeShotMeta(el, node.id)
         if (seen.has(meta.id)) continue
-        
+
         // upsert lead — ignora se já existe
         const lead = await upsertLead(node.id, meta.url)
         if (!lead) continue
@@ -120,13 +131,14 @@ async function collectShots(page: Page, node: WorkflowNode) {
       }
     }
 
+    // scroll uma viewport p/ carregar mais posts
     await page.mouse.wheel(0, page.viewportSize()?.height ?? 800)
   }
 
   return collected
 }
 
-/* === gera id e url quando possível === */
+/* ------------------------- METADATA EXTRACTION -------------------------- */
 async function makeShotMeta(el: Locator, nodeId: string): Promise<ShotMeta> {
   let href = ''
   try {
@@ -148,27 +160,31 @@ async function makeShotMeta(el: Locator, nodeId: string): Promise<ShotMeta> {
   }
 }
 
-
-
-/* === n8n === */
-async function sendShotToN8n(meta: ShotMeta, buf: Buffer, grp = '') {
+/* ============================= N8N INTEGRATION ============================= */
+async function sendShotToN8n(meta: ShotMeta, buf: Buffer, groupName = '', prompt = '') {
   if (!ENV_WEBHOOK) {
     console.log('[n8n] webhook ausente; pulando')
     return
   }
+
+  const payload = {
+    ...meta,
+    prompt,                     // ← incluído
+    screenshot: buf.toString('base64'),
+    screenshot_type: 'png',
+    group_name: groupName
+  }
+
   try {
     const res = await fetch(ENV_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...meta,
-        screenshot: buf.toString('base64'),
-        screenshot_type: 'png'
-      })
+      body: JSON.stringify(payload)
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    console.log(`[n8n] shot ${meta.id} enviado para ${grp}`)
-  } catch (e) {
-    console.error('[n8n] falha no envio', e)
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+    console.log(`[n8n] shot ${meta.id} enviado para ${groupName}`)
+  } catch (err) {
+    console.error('[n8n] falha no envio', err)
   }
 }
