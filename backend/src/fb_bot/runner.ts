@@ -169,7 +169,7 @@ async function sendShotToN8n(meta: ShotMeta, buf: Buffer, groupName = '', prompt
 
   const payload = {
     ...meta,
-    prompt,                     // ← incluído
+    prompt,
     screenshot: buf.toString('base64'),
     screenshot_type: 'png',
     group_name: groupName
@@ -185,6 +185,6 @@ async function sendShotToN8n(meta: ShotMeta, buf: Buffer, groupName = '', prompt
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
     console.log(`[n8n] shot ${meta.id} enviado para ${groupName}`)
   } catch (err) {
-    console.error('[n8n] falha no envio', err)
+    console.error('[n8n] falha no envio:', err)
   }
 }

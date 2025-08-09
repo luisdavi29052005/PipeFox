@@ -17,7 +17,7 @@ app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
-    
+
     // Allow localhost and Replit domains
     const allowedOrigins = [
       'http://localhost:5173',
@@ -25,12 +25,12 @@ app.use(cors({
       'http://0.0.0.0:5173',
       'http://0.0.0.0:3000'
     ];
-    
+
     // Allow any replit domain
     if (origin.includes('replit.dev') || origin.includes('repl.co') || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    
+
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -53,6 +53,7 @@ app.get('/health', (req, res) => {
 import accountsRouter from './api/accounts';
 import workflowsRouter from './api/workflows';
 import workflowNodesRoutes from './api/workflow-nodes.js';
+import statsRouter from './api/stats';
 
 // API routes
 app.use('/api/accounts', accountsRouter);
@@ -60,6 +61,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/leads', leadsRouter);
 app.use('/api/workflows', workflowsRouter);
 app.use('/api/workflow-nodes', workflowNodesRoutes);
+app.use('/api', statsRouter);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

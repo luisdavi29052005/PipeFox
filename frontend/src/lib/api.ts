@@ -60,7 +60,7 @@ export function logout() {
 export function resetPassword(email: string) {
   return req("/api/auth/reset", { method: "POST", json: { email } });
 }
-export function deleteAccount() {
+export function deleteUserAccount() {
   return req("/api/auth/account", { method: "DELETE" });
 }
 export function loginWithGoogle() {
@@ -127,20 +127,43 @@ export function createWorkflowNode(body: {
 }) {
   return req("/api/workflow-nodes", { method: "POST", json: body });
 }
-export function updateWorkflowNode(id: string, body: Partial<{
-  group_url: string;
-  group_name: string;
-  prompt: string;
-  keywords: string[];
-  is_active: boolean;
-}>) {
-  return req(`/api/workflow-nodes/${id}`, { method: "PUT", json: body });
+export const updateWorkflowNode = async (nodeId: string, data: any) => {
+  const response = await fetch(`${apiBase}/api/workflow-nodes/${nodeId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data)
+  })
+  if (!response.ok) throw new Error('Failed to update workflow node')
+  return response.json()
 }
-export function deleteWorkflowNode(id: string) {
-  return req(`/api/workflow-nodes/${id}`, { method: "DELETE" });
+
+export function deleteWorkflowNode(nodeId: string) {
+  return req(`/api/workflow-nodes/${nodeId}`, { method: 'DELETE' });
+}
+
+export function deleteWorkflow(workflowId: string) {
+  return req(`/api/workflows/${workflowId}`, { method: 'DELETE' });
+}
+
+export function deleteFbAccount(accountId: string) {
+  return req(`/api/accounts/${accountId}`, { method: 'DELETE' });
 }
 
 /* =========== HEALTH =========== */
 export function health() {
   return req("/health", { method: "GET" });
+}
+
+/* =========== STATS =========== */
+export function getLeads() {
+  return req('/api/leads');
+}
+
+export function getStats() {
+  return req('/api/stats');
+}
+
+export function getStatsMock() {
+  return req('/api/stats/mock');
 }
