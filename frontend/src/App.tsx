@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard'
 import Workflows from './pages/Workflows'
 import Accounts from './pages/Accounts'
 import Leads from './pages/Leads'
+import Plans from './pages/Plans'
+import Credits from './pages/Credits'
 import CreateWorkflow from './pages/CreateWorkflow'
 import WorkflowEditor from './pages/WorkflowEditor'
 import ProtectedRoute from './routes/ProtectedRoute'
@@ -42,6 +44,16 @@ export default function App() {
         <Route path="/leads" element={
           <ProtectedRoute>
             <Leads />
+          </ProtectedRoute>
+        } />
+        <Route path="/plans" element={
+          <ProtectedRoute>
+            <Plans />
+          </ProtectedRoute>
+        } />
+        <Route path="/credits" element={
+          <ProtectedRoute>
+            <Credits />
           </ProtectedRoute>
         } />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
