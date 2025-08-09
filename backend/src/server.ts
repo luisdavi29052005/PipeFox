@@ -56,7 +56,6 @@ import workflowNodesRoutes from './api/workflow-nodes.js';
 import statsRouter from './api/stats';
 import dashboardRouter from './api/dashboard';
 import plansRouter from './api/plans';
-import creditsRouter from './api/credits';
 
 // API routes
 app.use('/api/accounts', accountsRouter);
@@ -66,7 +65,6 @@ app.use('/api/workflows', workflowsRouter);
 app.use('/api/workflow-nodes', workflowNodesRoutes);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/plans', plansRouter);
-app.use('/api/credits', creditsRouter);
 app.use('/api', statsRouter);
 
 // Error handling middleware

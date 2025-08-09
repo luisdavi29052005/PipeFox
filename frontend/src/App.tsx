@@ -1,4 +1,3 @@
-
 import { ReactNode } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
@@ -6,6 +5,8 @@ import Dashboard from './pages/Dashboard'
 import Workflows from './pages/Workflows'
 import Accounts from './pages/Accounts'
 import Leads from './pages/Leads'
+import Plans from './pages/Plans'
+
 import CreateWorkflow from './pages/CreateWorkflow'
 import WorkflowEditor from './pages/WorkflowEditor'
 import ProtectedRoute from './routes/ProtectedRoute'
@@ -25,6 +26,16 @@ export default function App() {
             <Workflows />
           </ProtectedRoute>
         } />
+        <Route path="/workflows/create" element={
+          <ProtectedRoute>
+            <CreateWorkflow />
+          </ProtectedRoute>
+        } />
+        <Route path="/workflows/:id/edit" element={
+          <ProtectedRoute>
+            <WorkflowEditor />
+          </ProtectedRoute>
+        } />
         <Route path="/accounts" element={
           <ProtectedRoute>
             <Accounts />
@@ -35,14 +46,9 @@ export default function App() {
             <Leads />
           </ProtectedRoute>
         } />
-        <Route path="/workflow/create" element={
+        <Route path="/plans" element={
           <ProtectedRoute>
-            <CreateWorkflow />
-          </ProtectedRoute>
-        } />
-        <Route path="/workflow/:id" element={
-          <ProtectedRoute>
-            <WorkflowEditor />
+            <Plans />
           </ProtectedRoute>
         } />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

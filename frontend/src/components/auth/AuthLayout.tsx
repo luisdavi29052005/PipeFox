@@ -1,4 +1,3 @@
-
 import { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
@@ -72,19 +71,6 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
             delay: 2
           }}
         />
-        
-        {/* Bottom Attribution */}
-        <motion.div 
-          className="absolute bottom-6 left-6 z-10"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1, duration: 0.5 }}
-        >
-          <div className="flex items-center text-white">
-            <div className="w-2 h-2 bg-white rounded-full mr-2 opacity-80"></div>
-            <span className="text-sm opacity-80">Temporal One by Clear Supply</span>
-          </div>
-        </motion.div>
       </div>
     </div>
   )

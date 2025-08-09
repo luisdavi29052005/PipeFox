@@ -1,37 +1,37 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Check, Crown, Zap, Users, Calendar, CreditCard } from 'lucide-react'
-import { getPlans, getSubscription, checkout } from '../lib/api'
+import { Check, Zap, Crown, Users, CreditCard } from 'lucide-react'
+import { getPlans, checkout, getSubscription } from '../lib/api'
 import Layout from '../components/layout/Layout'
 import Sidebar from '../components/dashboard/Sidebar'
 import Button from '../components/ui/Button'
 import Alert from '../components/ui/Alert'
 
 interface Plan {
-  id: string
+  id: number
   name: string
   price: number
   currency: string
+  interval: string
   limits: {
     workflows: number
-    fb_accounts: number
+    facebook_accounts: number
     posts_per_day: number
-    credits_per_month: number
   }
+  stripe_price_id: string
+  stripe_product_id: string
 }
 
 interface Subscription {
-  id: string
-  status: string
   plan: Plan
 }
 
 export default function Plans() {
   const [plans, setPlans] = useState<Plan[]>([])
-  const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null)
+  const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
-  const [processingPlan, setProcessingPlan] = useState<string | null>(null)
+  const [processing, setProcessing] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
@@ -48,29 +48,33 @@ export default function Plans() {
       ])
       
       setPlans(plansRes.data)
-      setCurrentSubscription(subscriptionRes.data.subscription)
+      setSubscription(subscriptionRes.data.subscription)
     } catch (error) {
-      console.error('Error loading plans:', error)
+      console.error('Error loading data:', error)
       setError('Erro ao carregar planos')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSubscribe = async (planId: string) => {
+  const handleCheckout = async (planId: number) => {
     try {
-      setProcessingPlan(planId)
+      setProcessing(planId)
       setError(null)
       
-      await checkout(planId, 'credit_card')
+      await checkout(planId, 'card')
       setSuccess('Assinatura realizada com sucesso!')
       await loadData()
     } catch (error) {
-      console.error('Error subscribing to plan:', error)
-      setError(error instanceof Error ? error.message : 'Erro ao processar assinatura')
+      console.error('Error during checkout:', error)
+      setError(error instanceof Error ? error.message : 'Erro ao processar pagamento')
     } finally {
-      setProcessingPlan(null)
+      setProcessing(null)
     }
+  }
+
+  const isCurrentPlan = (planId: number) => {
+    return subscription?.plan?.id === planId
   }
 
   const getPlanIcon = (planName: string) => {
@@ -148,108 +152,95 @@ export default function Plans() {
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {plans.map((plan, index) => {
-                  const isCurrentPlan = currentSubscription?.plan.id === plan.id
-                  const isPopular = plan.name.toLowerCase() === 'pro'
-                  
-                  return (
-                    <motion.div
-                      key={plan.id}
-                      className={`relative bg-white dark:bg-gray-800 rounded-2xl border-2 ${
-                        isPopular 
-                          ? 'border-purple-500 shadow-xl' 
-                          : 'border-gray-200 dark:border-gray-700'
-                      } p-8 shadow-lg ${isCurrentPlan ? 'ring-2 ring-orange-500' : ''}`}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.6, delay: index * 0.1 }}
+                {plans.map((plan, index) => (
+                  <motion.div
+                    key={plan.id}
+                    className={`bg-white dark:bg-gray-800 rounded-2xl border-2 p-8 shadow-lg relative ${
+                      isCurrentPlan(plan.id) 
+                        ? 'border-orange-500 ring-2 ring-orange-200 dark:ring-orange-800' 
+                        : 'border-gray-200 dark:border-gray-700'
+                    } ${plan.name === 'Pro' ? 'transform scale-105' : ''}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: index * 0.1 }}
+                  >
+                    {plan.name === 'Pro' && (
+                      <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                        <span className="bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-medium">
+                          Mais Popular
+                        </span>
+                      </div>
+                    )}
+
+                    {isCurrentPlan(plan.id) && (
+                      <div className="absolute -top-4 right-4">
+                        <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                          Plano Atual
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="text-center mb-6">
+                      {getPlanIcon(plan.name)}
+                      <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-4 mb-2">
+                        {plan.name}
+                      </h3>
+                      <div className="flex items-baseline justify-center">
+                        <span className="text-4xl font-bold text-gray-900 dark:text-white">
+                          R$ {(plan.price * 5.5).toFixed(0)}
+                        </span>
+                        <span className="text-gray-600 dark:text-gray-400 ml-1">
+                          /{plan.interval === 'month' ? 'mês' : 'ano'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 mb-8">
+                      <div className="flex items-center">
+                        <Check className="w-5 h-5 text-green-500 mr-3" />
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {formatLimit(plan.limits.workflows)} workflows
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <Check className="w-5 h-5 text-green-500 mr-3" />
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {formatLimit(plan.limits.facebook_accounts)} contas Facebook
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <Check className="w-5 h-5 text-green-500 mr-3" />
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {formatLimit(plan.limits.posts_per_day)} posts/dia
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={() => handleCheckout(plan.id)}
+                      disabled={processing === plan.id || isCurrentPlan(plan.id)}
+                      className={`w-full ${
+                        plan.name === 'Pro' 
+                          ? 'bg-orange-600 hover:bg-orange-700' 
+                          : 'bg-gray-600 hover:bg-gray-700'
+                      }`}
                     >
-                      {isPopular && (
-                        <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                          <span className="bg-purple-500 text-white px-4 py-1 rounded-full text-sm font-medium">
-                            Mais Popular
-                          </span>
+                      {processing === plan.id ? (
+                        <div className="flex items-center justify-center">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Processando...
                         </div>
+                      ) : isCurrentPlan(plan.id) ? (
+                        'Plano Atual'
+                      ) : (
+                        <>
+                          <CreditCard className="w-4 h-4 mr-2" />
+                          {plan.price === 0 ? 'Selecionar Gratuito' : 'Assinar Agora'}
+                        </>
                       )}
-
-                      {isCurrentPlan && (
-                        <div className="absolute -top-4 right-4">
-                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-medium">
-                            Plano Atual
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="text-center mb-8">
-                        <div className="flex justify-center mb-4">
-                          {getPlanIcon(plan.name)}
-                        </div>
-                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                          {plan.name}
-                        </h3>
-                        <div className="mb-4">
-                          <span className="text-4xl font-bold text-gray-900 dark:text-white">
-                            R$ {plan.price.toFixed(2)}
-                          </span>
-                          <span className="text-gray-600 dark:text-gray-400 ml-2">
-                            /mês
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4 mb-8">
-                        <div className="flex items-center">
-                          <Check className="w-5 h-5 text-green-500 mr-3" />
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {formatLimit(plan.limits.workflows)} workflows
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <Check className="w-5 h-5 text-green-500 mr-3" />
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {formatLimit(plan.limits.fb_accounts)} contas Facebook
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <Check className="w-5 h-5 text-green-500 mr-3" />
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {formatLimit(plan.limits.posts_per_day)} posts/dia
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <Check className="w-5 h-5 text-green-500 mr-3" />
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {formatLimit(plan.limits.credits_per_month)} créditos/mês
-                          </span>
-                        </div>
-                      </div>
-
-                      <Button
-                        onClick={() => handleSubscribe(plan.id)}
-                        disabled={isCurrentPlan || processingPlan === plan.id}
-                        className={`w-full ${
-                          isPopular 
-                            ? 'bg-purple-600 hover:bg-purple-700' 
-                            : 'bg-orange-600 hover:bg-orange-700'
-                        }`}
-                      >
-                        {processingPlan === plan.id ? (
-                          <div className="flex items-center justify-center">
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Processando...
-                          </div>
-                        ) : isCurrentPlan ? (
-                          'Plano Atual'
-                        ) : (
-                          <>
-                            <CreditCard className="w-4 h-4 mr-2" />
-                            Assinar
-                          </>
-                        )}
-                      </Button>
-                    </motion.div>
-                  )
-                })}
+                    </Button>
+                  </motion.div>
+                ))}
               </div>
             </motion.div>
           </div>

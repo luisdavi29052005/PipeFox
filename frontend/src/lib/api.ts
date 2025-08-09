@@ -183,7 +183,7 @@ export const getPlans = async () => {
 }
 
 export const checkout = async (planId: string, paymentMethod: string) => {
-  const response = await fetch(`${apiBase}/api/checkout`, {
+  const response = await fetch(`${apiBase}/api/plans/checkout`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -201,7 +201,7 @@ export const checkout = async (planId: string, paymentMethod: string) => {
 }
 
 export const getSubscription = async () => {
-  const response = await fetch(`${apiBase}/api/subscription`, {
+  const response = await fetch(`${apiBase}/api/plans/subscription`, {
     credentials: 'include'
   })
 
@@ -214,7 +214,7 @@ export const getSubscription = async () => {
 }
 
 export const cancelSubscription = async () => {
-  const response = await fetch(`${apiBase}/api/subscription/cancel`, {
+  const response = await fetch(`${apiBase}/api/plans/subscription/cancel`, {
     method: 'POST',
     credentials: 'include'
   })
@@ -222,56 +222,6 @@ export const cancelSubscription = async () => {
   if (!response.ok) {
     const errorData = await response.json()
     throw new Error(errorData.error || 'Erro ao cancelar assinatura')
-  }
-
-  return response.json()
-}
-
-// Credits API
-export const getCredits = async () => {
-  const response = await fetch(`${apiBase}/api/credits`, {
-    credentials: 'include'
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.error || 'Erro ao buscar créditos')
-  }
-
-  return response.json()
-}
-
-export const useCredits = async (amount: number = 1) => {
-  const response = await fetch(`${apiBase}/api/credits/use`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include',
-    body: JSON.stringify({ amount })
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.error || 'Erro ao usar créditos')
-  }
-
-  return response.json()
-}
-
-export const addCredits = async (amount: number) => {
-  const response = await fetch(`${apiBase}/api/credits/add`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include',
-    body: JSON.stringify({ amount })
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.error || 'Erro ao adicionar créditos')
   }
 
   return response.json()
