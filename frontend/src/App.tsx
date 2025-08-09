@@ -1,4 +1,3 @@
-
 import { ReactNode } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
@@ -25,6 +24,16 @@ export default function App() {
             <Workflows />
           </ProtectedRoute>
         } />
+        <Route path="/workflows/create" element={
+          <ProtectedRoute>
+            <CreateWorkflow />
+          </ProtectedRoute>
+        } />
+        <Route path="/workflows/:id/edit" element={
+          <ProtectedRoute>
+            <WorkflowEditor />
+          </ProtectedRoute>
+        } />
         <Route path="/accounts" element={
           <ProtectedRoute>
             <Accounts />
@@ -33,16 +42,6 @@ export default function App() {
         <Route path="/leads" element={
           <ProtectedRoute>
             <Leads />
-          </ProtectedRoute>
-        } />
-        <Route path="/workflow/create" element={
-          <ProtectedRoute>
-            <CreateWorkflow />
-          </ProtectedRoute>
-        } />
-        <Route path="/workflow/:id" element={
-          <ProtectedRoute>
-            <WorkflowEditor />
           </ProtectedRoute>
         } />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
