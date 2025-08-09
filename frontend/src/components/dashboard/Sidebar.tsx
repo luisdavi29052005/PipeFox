@@ -36,7 +36,6 @@ export default function Sidebar() {
     { path: '/accounts', label: 'Contas', icon: Users },
     { path: '/leads', label: 'Leads', icon: Target },
     { path: '/plans', label: 'Planos', icon: CreditCard },
-    { path: '/credits', label: 'Créditos', icon: Coins },
   ]
 
   return (

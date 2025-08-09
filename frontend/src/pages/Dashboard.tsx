@@ -123,9 +123,11 @@ export default function Dashboard() {
                       </span>
                     </div>
                   )}
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {getRemainingCredits().toLocaleString()} créditos disponíveis
-                  </p>
+                  {subscription && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Limite: {formatLimit(subscription.plan.limits.workflows)} workflows, {formatLimit(subscription.plan.limits.posts_per_day)} posts/dia
+                    </p>
+                  )}
                 </div>
               </div>
 

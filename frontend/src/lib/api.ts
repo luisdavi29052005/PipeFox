@@ -225,57 +225,10 @@ export const cancelSubscription = async () => {
   }
 
   return response.json()
+}n()
 }
 
-// Credits API
-export const getCredits = async () => {
-  const response = await fetch(`${apiBase}/api/credits`, {
-    credentials: 'include'
-  })
 
-  if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.error || 'Erro ao buscar créditos')
-  }
-
-  return response.json()
-}
-
-export const useCredits = async (amount: number = 1) => {
-  const response = await fetch(`${apiBase}/api/credits/use`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include',
-    body: JSON.stringify({ amount })
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.error || 'Erro ao usar créditos')
-  }
-
-  return response.json()
-}
-
-export const addCredits = async (amount: number) => {
-  const response = await fetch(`${apiBase}/api/credits/add`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include',
-    body: JSON.stringify({ amount })
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.error || 'Erro ao adicionar créditos')
-  }
-
-  return response.json()
-}
 
 
 /* =========== WORKFLOWS =========== */

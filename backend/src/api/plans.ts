@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { supabase } from '../supabaseClient.js';
 import { requireAuth } from '../middleware/requireAuth.js';
@@ -81,22 +80,6 @@ router.post('/checkout', requireAuth, async (req, res) => {
 
     if (paymentError) throw paymentError;
 
-    // Update or create credits
-    const creditsToAdd = plan.limits.credits_per_month;
-    const resetDate = new Date();
-    resetDate.setMonth(resetDate.getMonth() + 1);
-
-    await supabase
-      .from('credits')
-      .upsert({
-        user_id: userId,
-        total_credits: creditsToAdd,
-        used_credits: 0,
-        reset_date: resetDate.toISOString()
-      }, {
-        onConflict: 'user_id'
-      });
-
     res.json({
       success: true,
       data: { subscription, plan }
@@ -122,12 +105,6 @@ router.get('/subscription', requireAuth, async (req, res) => {
       .eq('status', 'active')
       .single();
 
-    const { data: credits, error: creditsError } = await supabase
-      .from('credits')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-
     if (subError && subError.code !== 'PGRST116') {
       throw subError;
     }
@@ -135,8 +112,7 @@ router.get('/subscription', requireAuth, async (req, res) => {
     res.json({
       success: true,
       data: {
-        subscription: subscription || null,
-        credits: credits || { total_credits: 0, used_credits: 0 }
+        subscription: subscription || null
       }
     });
   } catch (error) {
