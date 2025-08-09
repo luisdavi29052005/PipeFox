@@ -1,7 +1,5 @@
 import { ReactNode } from 'react'
 import { motion } from 'framer-motion'
-import BotLoopVisualizer from '../animations/BotLoopVisualizer'
-import PixelLiquidR3F from '../animations/PixelLiquidR3F'
 
 interface AuthLayoutProps {
   children: ReactNode
@@ -22,7 +20,7 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
         </motion.div>
       </div>
       
-      {/* Right side - Animated Gradient + Pixel Liquid */}
+      {/* Right side - Animated Gradient */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
         {/* Animated Gradient Background */}
         <motion.div 
@@ -73,29 +71,6 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
             delay: 2
           }}
         />
-
-        {/* Pixel Liquid R3F Overlay */}
-        <PixelLiquidR3F
-          className="absolute inset-0 mix-blend-screen"
-          pixelSize={12}     // + alto = mais blocado
-          speed={1.2}
-          intensity={1.2}
-          palette={['#3b0a67','#6a5ff5','#ff7a2f']}
-          opacity={0.92}
-        />
-<BotLoopVisualizer className="absolute inset-0 p-6" speed={1.1} accent="#60a5fa" />
-        {/* Bottom Attribution */}
-        <motion.div 
-          className="absolute bottom-6 left-6 z-10"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1, duration: 0.5 }}
-        >
-          <div className="flex items-center text-white">
-            <div className="w-2 h-2 bg-white rounded-full mr-2 opacity-80"></div>
-            <span className="text-sm opacity-80">Temporal One by Clear Supply</span>
-          </div>
-        </motion.div>
       </div>
     </div>
   )
