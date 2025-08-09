@@ -1,5 +1,6 @@
 import express from 'express';
-import { requireAuth } from '../middleware/requireAuth.js'; // CORREÇÃO: Usando o middleware correto
+import { requireAuth } from '../middleware/requireAuth.js';
+import { checkWorkflowLimit } from '../middleware/checkLimits';
 import { supabase } from '../supabaseClient.js';
 import { v4 as uuid } from 'uuid';
 import { workflowQueue } from '../queue.js';
@@ -72,7 +73,7 @@ router.get('/:id/nodes', requireAuth, async (req, res) => {
 /* ------------------------------------------------------------------ */
 /* CRIAR WORKFLOW                                                     */
 /* ------------------------------------------------------------------ */
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, checkWorkflowLimit, async (req, res) => {
   try {
     const userId = req.user.id;
     const {
@@ -193,7 +194,7 @@ router.post('/:id/start', requireAuth, async (req, res) => {
 
     // Atualiza o status no banco
     await supabase.from('workflows').update({ status: 'running' }).eq('id', workflowId);
-    
+
     res.json({ msg: `Workflow ${workflowId} foi enfileirado para execução!` });
 
   } catch (err) {

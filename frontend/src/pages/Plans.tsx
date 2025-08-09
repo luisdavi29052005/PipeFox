@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Check, Zap, Crown, Users, CreditCard } from 'lucide-react'
@@ -7,9 +6,11 @@ import Layout from '../components/layout/Layout'
 import Sidebar from '../components/dashboard/Sidebar'
 import Button from '../components/ui/Button'
 import Alert from '../components/ui/Alert'
+import { toast, ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 
 interface Plan {
-  id: number
+  id: string
   name: string
   price: number
   currency: string
@@ -31,13 +32,39 @@ export default function Plans() {
   const [plans, setPlans] = useState<Plan[]>([])
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
-  const [processing, setProcessing] = useState<number | null>(null)
+  const [processing, setProcessing] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
+    
+    // Verificar se retornou do checkout com sucesso
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') === 'true') {
+      const sessionId = urlParams.get('session_id');
+      processSuccessfulPayment(sessionId);
+    }
   }, [])
+
+  const processSuccessfulPayment = async (sessionId: string | null) => {
+    try {
+      // Aqui você pode buscar os detalhes da sessão se necessário
+      // Por enquanto, vamos apenas mostrar sucesso e recarregar
+      toast.success('Pagamento processado com sucesso!');
+      
+      // Remove os parâmetros da URL
+      window.history.replaceState({}, document.title, '/plans');
+      
+      // Recarrega os dados
+      setTimeout(() => {
+        loadData();
+      }, 2000);
+    } catch (error) {
+      console.error('Error processing successful payment:', error);
+      toast.error('Erro ao processar pagamento');
+    }
+  }
 
   const loadData = async () => {
     try {
@@ -46,7 +73,7 @@ export default function Plans() {
         getPlans(),
         getSubscription()
       ])
-      
+
       setPlans(plansRes.data)
       setSubscription(subscriptionRes.data.subscription)
     } catch (error) {
@@ -57,23 +84,34 @@ export default function Plans() {
     }
   }
 
-  const handleCheckout = async (planId: number) => {
+  const handleCheckout = async (planId: string) => {
     try {
       setProcessing(planId)
-      setError(null)
-      
-      await checkout(planId, 'card')
-      setSuccess('Assinatura realizada com sucesso!')
-      await loadData()
+      const result = await checkout(planId, 'card')
+
+      // Se retornou checkout_url, redireciona para Stripe
+      if (result?.data?.checkout_url) {
+        window.location.href = result.data.checkout_url
+        return
+      }
+
+      // Se não tem checkout_url, é plano grátis
+      if (result?.success) {
+        toast.success('Plano ativado com sucesso!')
+        // Refresh user data
+        window.location.reload()
+      } else {
+        toast.error(result?.error || 'Erro ao processar pagamento')
+      }
     } catch (error) {
-      console.error('Error during checkout:', error)
-      setError(error instanceof Error ? error.message : 'Erro ao processar pagamento')
+      console.error('Checkout error:', error)
+      toast.error('Erro ao processar pagamento')
     } finally {
       setProcessing(null)
     }
   }
 
-  const isCurrentPlan = (planId: number) => {
+  const isCurrentPlan = (planId: string) => {
     return subscription?.plan?.id === planId
   }
 
@@ -246,6 +284,18 @@ export default function Plans() {
           </div>
         </main>
       </div>
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="colored"
+      />
     </Layout>
   )
 }

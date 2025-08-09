@@ -1,7 +1,8 @@
 import express from 'express';
-import { requireAuth }      from '../middleware/requireAuth.js';
-import { supabase }         from '../supabaseClient.js';
+import { requireAuth } from '../middleware/requireAuth.js';
+import { supabase } from '../supabaseClient.js';
 import { openLoginWindow } from '../fb_bot/fbLogin.js';
+import { checkAccountLimit } from '../middleware/checkLimits';
 
 
 
@@ -25,7 +26,7 @@ router.get('/', requireAuth, async (req, res) => {
 /* -------------------------------------------------------------------- */
 /* POST /api/accounts – cria conta vinculada ao usuário autenticado     */
 /* -------------------------------------------------------------------- */
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, checkAccountLimit, async (req, res) => {
   const userId = req.user.id;
   const { name } = req.body;
 
@@ -154,7 +155,7 @@ router.get('/:id/debug-session', requireAuth, async (req, res) => {
 /* POST /api/accounts/:id/logout – volta status se a conta é do user    */
 /* -------------------------------------------------------------------- */
 router.post('/:id/logout', requireAuth, async (req, res) => {
-  const userId    = req.user.id;
+  const userId = req.user.id;
   const accountId = req.params.id;
 
   const { error } = await supabase                     // basta tentar update

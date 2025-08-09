@@ -9,27 +9,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-<<<<<<< HEAD
-    "@react-three/drei": "9.88.16",
-    "@react-three/fiber": "8.15.16",
-    "@react-three/postprocessing": "2.16.1",
-=======
     "@react-three/drei": "^9.88.16",
     "@react-three/fiber": "^8.15.16",
     "@react-three/postprocessing": "^2.16.1",
->>>>>>> 0bd41a7 (feat: primeira versão funcional do PipeFox)
     "framer-motion": "11.18.2",
     "lucide-react": "^0.539.0",
     "postprocessing": "6.35.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.26.1",
+    "react-toastify": "^11.0.5",
     "recharts": "^3.1.2",
-<<<<<<< HEAD
-    "three": "0.158.0"
-=======
     "three": "^0.158.0"
->>>>>>> 0bd41a7 (feat: primeira versão funcional do PipeFox)
   },
   "devDependencies": {
     "@types/react": "^18.2.66",
