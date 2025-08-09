@@ -1,6 +1,7 @@
-
 import { ReactNode } from 'react'
 import { motion } from 'framer-motion'
+import BotLoopVisualizer from '../animations/BotLoopVisualizer'
+import PixelLiquidR3F from '../animations/PixelLiquidR3F'
 
 interface AuthLayoutProps {
   children: ReactNode
@@ -21,7 +22,7 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
         </motion.div>
       </div>
       
-      {/* Right side - Animated Gradient */}
+      {/* Right side - Animated Gradient + Pixel Liquid */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
         {/* Animated Gradient Background */}
         <motion.div 
@@ -72,7 +73,17 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
             delay: 2
           }}
         />
-        
+
+        {/* Pixel Liquid R3F Overlay */}
+        <PixelLiquidR3F
+          className="absolute inset-0 mix-blend-screen"
+          pixelSize={12}     // + alto = mais blocado
+          speed={1.2}
+          intensity={1.2}
+          palette={['#3b0a67','#6a5ff5','#ff7a2f']}
+          opacity={0.92}
+        />
+<BotLoopVisualizer className="absolute inset-0 p-6" speed={1.1} accent="#60a5fa" />
         {/* Bottom Attribution */}
         <motion.div 
           className="absolute bottom-6 left-6 z-10"

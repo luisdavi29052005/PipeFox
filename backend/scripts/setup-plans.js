@@ -7,7 +7,7 @@ import path from 'path';
 config({ path: path.resolve(process.cwd(), 'backend/.env') });
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   console.error('Missing Supabase environment variables');
@@ -16,52 +16,49 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-async function setupPlans() {
+export async function setupPlans() {
   try {
-    console.log('Setting up Stripe plans...');
+    console.log('Setting up plans...');
 
     // Delete existing plans
-    await supabase.from('plans').delete().neq('id', 0);
+    await supabase.from('plans').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
-    // Insert new plans with Stripe IDs
+    // Insert new plans matching the database schema
     const plans = [
       {
-        stripe_price_id: 'price_1Ru4xzGjO63cg6b9ZWBb9BFY',
-        stripe_product_id: 'prod_SpkSkzNmnrPd6k',
         name: 'Free',
         price: 0.00,
         currency: 'usd',
-        interval: 'month',
         limits: {
-          workflows: 1,
-          facebook_accounts: 1,
-          posts_per_day: 50
+          workflows: 3,
+          facebook_accounts: 2,
+          posts_per_day: 100,
+          stripe_price_id: 'price_1Ru4xzGjO63cg6b9ZWBb9BFY',
+          stripe_product_id: 'prod_SpkSkzNmnrPd6k'
         }
       },
       {
-        stripe_price_id: 'price_1Ru50RGjO63cg6b9WTQigiYL',
-        stripe_product_id: 'prod_SpkV0qXN8Okhb7',
         name: 'Pro',
         price: 39.00,
         currency: 'usd',
-        interval: 'month',
         limits: {
-          workflows: 10,
-          facebook_accounts: 5,
-          posts_per_day: 1000
+          workflows: 15,
+          facebook_accounts: 10,
+          posts_per_day: 1000,
+          stripe_price_id: 'price_1Ru50RGjO63cg6b9WTQigiYL',
+          stripe_product_id: 'prod_SpkV0qXN8Okhb7'
         }
       },
       {
-        stripe_price_id: 'price_1Ru51VGjO63cg6b9w6GIGEUm',
-        stripe_product_id: 'prod_SpkWnuRh9ngVWY',
         name: 'Enterprise',
         price: 199.00,
         currency: 'usd',
-        interval: 'month',
         limits: {
           workflows: -1,
-          facebook_accounts: 20,
-          posts_per_day: -1
+          facebook_accounts: 50,
+          posts_per_day: -1,
+          stripe_price_id: 'price_1Ru51VGjO63cg6b9w6GIGEUm',
+          stripe_product_id: 'prod_SpkWnuRh9ngVWY'
         }
       }
     ];
@@ -81,8 +78,11 @@ async function setupPlans() {
 
   } catch (error) {
     console.error('Setup failed:', error);
-    process.exit(1);
+    throw error;
   }
 }
 
-setupPlans();
+// Execute if run directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  setupPlans().catch(() => process.exit(1));
+}

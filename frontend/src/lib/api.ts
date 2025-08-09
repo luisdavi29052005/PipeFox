@@ -183,7 +183,7 @@ export const getPlans = async () => {
 }
 
 export const checkout = async (planId: string, paymentMethod: string) => {
-  const response = await fetch(`${apiBase}/api/checkout`, {
+  const response = await fetch(`${apiBase}/api/plans/checkout`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -201,7 +201,7 @@ export const checkout = async (planId: string, paymentMethod: string) => {
 }
 
 export const getSubscription = async () => {
-  const response = await fetch(`${apiBase}/api/subscription`, {
+  const response = await fetch(`${apiBase}/api/plans/subscription`, {
     credentials: 'include'
   })
 
@@ -214,7 +214,7 @@ export const getSubscription = async () => {
 }
 
 export const cancelSubscription = async () => {
-  const response = await fetch(`${apiBase}/api/subscription/cancel`, {
+  const response = await fetch(`${apiBase}/api/plans/subscription/cancel`, {
     method: 'POST',
     credentials: 'include'
   })
@@ -225,10 +225,7 @@ export const cancelSubscription = async () => {
   }
 
   return response.json()
-}n()
 }
-
-
 
 
 /* =========== WORKFLOWS =========== */

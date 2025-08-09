@@ -1,7 +1,7 @@
 import { Router } from 'express'
-import { signUp, signIn, signWithGoogle, sendReset, deleteUser } from '../services/auth.service'
-import { requireAuth } from '../middleware/requireAuth'
-import { supabaseAnon } from '../supabaseClient'
+import { signUp, signIn, signWithGoogle, sendReset, deleteUser } from '../services/auth.service.js'
+import { requireAuth } from '../middleware/requireAuth.js'
+import { supabase } from '../supabaseClient.js'
 
 const COOKIE = {
   name: 'auth',
@@ -18,9 +18,43 @@ const router = Router()
 
 router.post('/signup', async (req, res) => {
   const { email, password } = req.body
-  const { data, error } = await signUp(email, password)
-  if (error) return res.status(400).json({ error: error.message })
-  res.json({ user: data.user })
+  const { data: user, error } = await signUp(email, password);
+
+  if (error) {
+    console.error('Signup error:', error);
+    return res.status(400).json({ success: false, error: error.message });
+  }
+
+  // Automatically assign Free plan to new user
+  if (user?.user?.id) {
+    try {
+      // Get Free plan
+      const { data: freePlan, error: planError } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('name', 'Free')
+        .single();
+
+      if (freePlan && !planError) {
+        // Create subscription for Free plan
+        await supabase
+          .from('subscriptions')
+          .insert({
+            user_id: user.user.id,
+            plan_id: freePlan.id,
+            status: 'active',
+            start_date: new Date().toISOString()
+          });
+
+        console.log(`Assigned Free plan to user ${user.user.id}`);
+      }
+    } catch (error) {
+      console.error('Error assigning Free plan:', error);
+      // Don't fail registration if plan assignment fails
+    }
+  }
+
+  res.json({ success: true, data: { user } });
 })
 
 router.post('/login', async (req, res) => {
@@ -48,7 +82,7 @@ router.get('/google', async (req, res) => {
 router.get('/callback', async (req, res) => {
   try {
     const { access_token, refresh_token } = req.query
-    
+
     if (access_token) {
       res.cookie(COOKIE.name, access_token as string, COOKIE.opts)
       res.redirect('/app')
