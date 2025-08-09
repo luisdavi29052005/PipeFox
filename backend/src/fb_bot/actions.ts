@@ -2,7 +2,7 @@ import { Page, ElementHandle } from 'playwright';
 import { upsertLead } from '../api/leads.js';
 import { sendToN8n } from '../services/n8n.service.js';
 
-const POST_SELECTOR = 'div[data-pagelet="FeedUnit_0"], article[data-ft], div[role="article"]';
+const POST_SELECTOR = 'div[role="article"][aria-labelledby]';
 
 interface WorkflowNode {
   id: string;

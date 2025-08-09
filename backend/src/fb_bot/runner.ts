@@ -1,35 +1,25 @@
-import { BrowserContext, Page, Locator } from 'playwright'
+import { BrowserContext, Page, Locator, ElementHandle } from 'playwright'
 import { supabase } from '../supabaseClient'
 import { openContextForAccount } from './context'
 import { upsertLead } from '../api/leads'
+import { sanitizeFacebookUrl } from '../utils/sanitizeFacebookUrl'
 import { config as loadEnv } from 'dotenv'
 
 loadEnv()
 
 /* ---------------------------------- CONSTS --------------------------------- */
 const ENV_WEBHOOK = process.env.N8N_WEBHOOK_URL ?? ''
+/**
+ * NOVO SELETOR ROBUSTO:
+ * A estrutura do feed mudou. Agora, o contêiner de cada post principal
+ * (e não o dos comentários) possui um atributo 'aria-describedby'.
+ * Este seletor busca por esse contêiner, garantindo que pegamos apenas os posts.
+ */
+const POST_SELECTOR = 'div[role="feed"] div[aria-describedby]'
 
-/** Seletores para posts excluindo áreas de comentários e interações */
-const POST_SELECTOR_SEM_COMENTARIOS = `
-  div[role="article"]:not(:has([aria-label*="comentário" i])):not(:has([aria-label*="comment" i])):not(:has([data-ad-rendering-role="comment_button"])):not(:has(form[aria-label*="comentário" i])):not(:has(form[aria-label*="comment" i])),
-  article[data-ft]:not(:has([aria-label*="comentário" i])):not(:has([aria-label*="comment" i])):not(:has([data-ad-rendering-role="comment_button"])):not(:has(form[aria-label*="comentário" i])):not(:has(form[aria-label*="comment" i])),
-  div[data-pagelet^="FeedUnit_"]:not(:has([aria-label*="comentário" i])):not(:has([aria-label*="comment" i])):not(:has([data-ad-rendering-role="comment_button"])):not(:has(form[aria-label*="comentário" i])):not(:has(form[aria-label*="comment" i]))
-`.replace(/\s+/g, ' ').trim()
 
-/** XPath como fallback para posts sem comentários */
-const POST_SELECTOR_XPATH = `
-  //div[@role="article"][not(descendant::*[contains(@aria-label, "comentário") or contains(@aria-label, "comment") or contains(@aria-label, "Comment") or contains(@aria-label, "Comentário")])]
-  [not(descendant::*[@data-ad-rendering-role="comment_button"])]
-  [not(descendant::form[contains(@aria-label, "comentário") or contains(@aria-label, "comment")])]
-  [not(starts-with(@aria-label, "Comentário de") or starts-with(@aria-label, "Comment by"))]
-  |
-  //article[@data-ft][not(descendant::*[contains(@aria-label, "comentário") or contains(@aria-label, "comment") or contains(@aria-label, "Comment") or contains(@aria-label, "Comentário")])]
-  [not(descendant::*[@data-ad-rendering-role="comment_button"])]
-  [not(descendant::form[contains(@aria-label, "comentário") or contains(@aria-label, "comment")])]
-  [not(starts-with(@aria-label, "Comentário de") or starts-with(@aria-label, "Comment by"))]
-`.replace(/\s+/g, ' ').trim()
-
-/* ------------------------------ TYPES ------------------------------- */
+/* --------------------------------- TYPES ----------------------------------- */
+// ...nenhuma alteração necessária aqui...
 interface WorkflowNode {
   id: string
   group_url: string
@@ -46,11 +36,18 @@ export interface WorkflowConfig {
 }
 
 interface PostData {
-  id: string
-  url: string
-  screenshot: Buffer
-  node_id: string
-  timestamp: string
+  id: string;
+  url: string;
+  timestamp: string;
+  node_id: string;
+  // Adicione outros campos se precisar extrair mais dados
+  authorName?: string;
+  text?: string;
+}
+
+interface ShotPackage {
+  data: PostData
+  png: Buffer
 }
 
 /* ------------------------------ STATE CONTROL ------------------------------ */
@@ -63,7 +60,9 @@ export async function startRunner(cfg: WorkflowConfig) {
 
   const results = await Promise.allSettled(cfg.nodes.map((n) => processGroup(cfg, n)))
   console.log(
-    `[runner] ${results.filter((r) => r.status === 'fulfilled').length} grupos OK, ${results.filter((r) => r.status === 'rejected').length} falharam — workflow ${cfg.id}`
+    `[runner] ${results.filter((r) => r.status === 'fulfilled').length} grupos OK, ${
+      results.filter((r) => r.status === 'rejected').length
+    } falharam — workflow ${cfg.id}`
   )
 
   running.delete(cfg.id)
@@ -76,7 +75,7 @@ export async function stopRunner(id: string) {
 
 /* =============================== GROUP LEVEL =============================== */
 async function processGroup(cfg: WorkflowConfig, node: WorkflowNode) {
-  console.log(`[runner] Processando grupo: ${node.group_name}`)
+  console.log(`[runner] grupo: ${node.group_name}`)
   let ctx: BrowserContext | null = null
 
   try {
@@ -90,229 +89,136 @@ async function processGroup(cfg: WorkflowConfig, node: WorkflowNode) {
     ctx = await openContextForAccount(acc.user_id, cfg.account_id)
     const page = await ctx.newPage()
 
-    // Otimiza carregamento
-    await page.route('**/*', (route) => {
-      const resourceType = route.request().resourceType()
-      if (['font', 'media', 'websocket'].includes(resourceType)) {
-        route.abort()
-      } else {
-        route.continue()
-      }
-    })
+    await page.goto(node.group_url, { waitUntil: 'load', timeout: 60_000 })
+    const shots = await collectShots(page, node)
 
-    await page.goto(node.group_url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-
-    // Aguarda carregamento do feed
-    await waitForFeedLoad(page)
-
-    const posts = await collectAndScreenshotPosts(page, node)
-
-    console.log(`[runner] ${posts.length} posts processados do grupo ${node.group_name}`)
-
-  } catch (err) {
-    console.error('[runner] Erro no processamento do grupo:', err)
+    if (shots.length) {
+      await Promise.allSettled(
+        shots.map(({ data, png }) => sendShotToN8n(data, png, node.group_name, node.prompt))
+      )
+    } else {
+      console.log('[runner] nenhum post novo')
+    }
+  } catch (err: any) {
+    console.error(`[runner] erro no grupo: ${err.message}`)
   } finally {
     if (ctx) await ctx.close().catch(() => {})
   }
 }
 
-/* ========================= FEED LOADING & COLLECTION ========================== */
-async function waitForFeedLoad(page: Page, timeout = 30_000) {
-  console.log('[runner] Aguardando carregamento do feed...')
+/* ========================= SCREENSHOT COLLECTION ========================== */
+async function collectShots(page: Page, node: WorkflowNode): Promise<ShotPackage[]> {
+  const MAX_EMPTY = 3
+  const collected: ShotPackage[] = []
+  const seen = new Set<string>()
 
+  // Espera mais robusta pelo carregamento do feed
   try {
-    await Promise.race([
-      page.waitForSelector('div[role="feed"]', { timeout }),
-      page.waitForSelector('div[role="article"]', { timeout }),
-      page.waitForSelector('article', { timeout }),
-      page.waitForTimeout(timeout)
-    ])
-
-    console.log('[runner] Feed carregado com sucesso')
-  } catch (error) {
-    console.log('[runner] Timeout no carregamento do feed - continuando...')
+      await page.waitForSelector('div[role="feed"] > div', { timeout: 20_000 })
+      console.log('[collect] Feed detectado, iniciando coleta.')
+  } catch {
+      console.warn('[collect] Feed não carregou no tempo esperado, tentando continuar mesmo assim.')
   }
-}
 
-/** Função para encontrar posts usando seletores sem comentários */
-async function findPostsWithFallback(page: Page) {
-  try {
-    // Primeiro tenta o seletor CSS semântico
-    const posts = page.locator(POST_SELECTOR_SEM_COMENTARIOS)
-    const count = await posts.count()
-    if (count > 0) {
-      console.log(`[runner] Posts encontrados com seletor semântico: ${count} posts`)
-      return posts
+  let empty = 0
+
+  for (let i = 0; i < 50; i++) { // Loop de segurança
+    await page.waitForTimeout(Math.random() * 1000 + 1500) // Pausa humanizada
+
+    const handles = await page.locator(`${POST_SELECTOR}:not([data-pipefox])`).elementHandles()
+    
+    if (!handles.length) {
+      if (++empty >= MAX_EMPTY) {
+        console.log('[collect] Fim do feed alcançado.')
+        break
+      }
+    } else {
+      empty = 0
     }
-  } catch (error) {
-    console.log(`[runner] Erro com seletor CSS semântico:`, error)
-  }
 
-  try {
-    // Fallback para XPath
-    const posts = page.locator(`xpath=${POST_SELECTOR_XPATH}`)
-    const count = await posts.count()
-    if (count > 0) {
-      console.log(`[runner] Posts encontrados com XPath: ${count} posts`)
-      return posts
-    }
-  } catch (error) {
-    console.log(`[runner] Erro com seletor XPath:`, error)
-  }
-
-  // Último recurso - seletor básico com filtros manuais
-  console.log('[runner] Usando seletor básico com filtros manuais')
-  const basicPosts = page.locator('div[role="article"], article[data-ft]')
-  return basicPosts.filter({
-    has: page.locator(':not([aria-label*="comentário" i]):not([aria-label*="comment" i]):not([data-ad-rendering-role="comment_button"])')
-  })
-}
-
-async function collectAndScreenshotPosts(page: Page, node: WorkflowNode): Promise<PostData[]> {
-  const collected: PostData[] = []
-  const processed = new Set<string>()
-  let scrollAttempts = 0
-  const MAX_SCROLLS = 10
-
-  while (scrollAttempts < MAX_SCROLLS) {
-    const postsLocator = await findPostsWithFallback(page)
-    const currentCount = await postsLocator.count()
-
-    console.log(`[collect] ${currentCount} posts encontrados (tentativa ${scrollAttempts + 1})`)
-
-    // Processa posts novos
-    for (let i = 0; i < currentCount; i++) {
-      const postContainer = postsLocator.nth(i)
-
+    for (const el of handles) {
       try {
-        // Verifica se já foi processado
-        const isProcessed = await postContainer.getAttribute('data-pipefox-processed')
-        if (isProcessed) continue
+        await el.evaluate((n) => n.setAttribute('data-pipefox', 'done'))
+        if (!(await el.isVisible())) continue
+        
+        await el.scrollIntoViewIfNeeded({ timeout: 1_500 }).catch(() => {})
 
-        // Marca como processado
-        await postContainer.evaluate(el => el.setAttribute('data-pipefox-processed', 'true'))
+        // O 'el' agora é o contêiner correto, então o screenshot será do post.
+        const png = await el.screenshot({ type: 'png' })
+        const meta = await makeShotMeta(el, node.id)
+        if (seen.has(meta.id)) continue
 
-        // Verifica se está visível
-        if (!(await postContainer.isVisible())) continue
-
-        // Validação adicional: verifica se não é área de comentário
-        const isCommentArea = await postContainer.evaluate(el => {
-          const ariaLabel = el.getAttribute('aria-label') || ''
-          const hasCommentButton = !!el.querySelector('[data-ad-rendering-role="comment_button"]')
-          const hasCommentForm = !!el.querySelector('form[aria-label*="comentário"], form[aria-label*="comment"]')
-          const hasCommentInput = !!el.querySelector('div[contenteditable][aria-placeholder*="comentário"], div[contenteditable][aria-placeholder*="comment"]')
-          
-          return (
-            ariaLabel.toLowerCase().includes('comentário') ||
-            ariaLabel.toLowerCase().includes('comment') ||
-            ariaLabel.startsWith('Comentário de') ||
-            ariaLabel.startsWith('Comment by') ||
-            hasCommentButton ||
-            hasCommentForm ||
-            hasCommentInput
-          )
-        })
-
-        if (isCommentArea) {
-          console.log(`[collect] Post ${i} ignorado: área de comentário detectada`)
-          continue
-        }
-
-        // Rola para o post
-        await postContainer.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {})
-        await page.waitForTimeout(500)
-
-        // Tira screenshot do post - SEM PARÂMETRO QUALITY
-        const screenshot = await postContainer.screenshot({ type: 'png' })
-
-        // Gera ID único simples
-        const postId = `post_${node.id}_${Date.now()}_${i}`
-        const postUrl = page.url()
-
-        // Verifica se é duplicado
-        if (processed.has(postId)) continue
-        processed.add(postId)
-
-        // Upsert no banco
-        const lead = await upsertLead(node.id, postUrl)
+        const lead = await upsertLead(node.id, meta.url)
         if (!lead) continue
 
-        const postData: PostData = {
-          id: postId,
-          url: postUrl,
-          screenshot,
-          node_id: node.id,
-          timestamp: new Date().toISOString()
-        }
-
-        collected.push(postData)
-
-        // Envia para N8N
-        await sendToN8N(postData, lead.id, node)
-
-        console.log(`[collect] Post ${postId} processado e enviado para N8N`)
-
+        seen.add(meta.id)
+        collected.push({ data: meta, png })
+        console.log(`[collect] shot id ${meta.id}`)
       } catch (error) {
-        console.error(`[collect] Erro processando post ${i}:`, error)
-        continue
+        // Ignora posts que desaparecem ou causam erro
       }
     }
 
-    // Scroll suave
-    await humanizedScroll(page)
-    scrollAttempts++
+    await page.mouse.wheel(0, page.viewportSize()?.height ?? 800)
   }
 
   return collected
 }
 
-async function humanizedScroll(page: Page) {
-  const viewport = page.viewportSize()
-  const scrollDistance = viewport ? Math.floor(viewport.height * 0.7) : 600
+/* ------------------------- METADATA EXTRACTION -------------------------- */
+async function makeShotMeta(el: ElementHandle, nodeId: string): Promise<PostData> {
+  let href = ''
+  try {
+    // Busca o link dentro do contêiner do post
+    const a = await el.$('a[href*="/posts/"], a[href*="/permalink/"]')
+    href = a ? (await a.getAttribute('href')) || '' : ''
+  } catch {}
 
-  await page.mouse.wheel(0, scrollDistance)
-  await page.waitForTimeout(1500 + Math.random() * 1000)
+  if (href && !href.startsWith('http')) href = `https://facebook.com${href}`
+  href = sanitizeFacebookUrl(href)
+
+  const idMatch = href.match(/(?:posts|permalink|videos|photo)\/(\d+)/)
+  const id = idMatch ? idMatch[1] : `${Date.now()}${Math.random().toString(16).slice(2, 6)}`
+
+  // Extrair outros dados se necessário
+  const authorName = await el.$('h3 a, h2 a, strong a').then(h => h?.innerText()).catch(() => undefined)
+  const text = await el.$('div[data-ad-preview="message"], div[dir="auto"]').then(d => d?.innerText()).catch(() => undefined)
+
+  return {
+    id,
+    url: href || `https://facebook.com/post/${id}`,
+    timestamp: new Date().toISOString(),
+    node_id: nodeId,
+    authorName,
+    text,
+  }
 }
 
 /* ============================= N8N INTEGRATION ============================= */
-async function sendToN8N(postData: PostData, leadId: string, node: WorkflowNode) {
+async function sendShotToN8n(meta: PostData, buf: Buffer, groupName = '', prompt = '') {
   if (!ENV_WEBHOOK) {
-    console.log('[n8n] Webhook não configurado - pulando processamento')
+    console.log('[n8n] webhook ausente; pulando')
     return
   }
 
+  const payload = {
+    ...meta,
+    prompt,
+    screenshot: buf.toString('base64'),
+    screenshot_type: 'png',
+    group_name: groupName
+  }
+
   try {
-    console.log(`[n8n] Enviando post ${postData.id} para N8N...`)
-
-    const payload = {
-      lead_id: leadId,
-      post_id: postData.id,
-      post_url: postData.url,
-      group_name: node.group_name,
-      prompt: node.prompt,
-      screenshot: postData.screenshot.toString('base64'),
-      screenshot_type: 'png',
-      timestamp: postData.timestamp,
-      node_id: node.id
-    }
-
-    const response = await fetch(ENV_WEBHOOK, {
+    const res = await fetch(ENV_WEBHOOK, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'User-Agent': 'PipeFox/1.0'
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30000)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     })
 
-    if (!response.ok) {
-      throw new Error(`N8N respondeu com status ${response.status}: ${await response.text()}`)
-    }
-
-    console.log(`[n8n] Post ${postData.id} enviado com sucesso para N8N`)
-
-  } catch (error) {
-    console.error(`[n8n] Erro enviando post ${postData.id} para N8N:`, error)
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+    console.log(`[n8n] shot ${meta.id} enviado para ${groupName}`)
+  } catch (err: any) {
+    console.error('[n8n] falha no envio:', err)
   }
 }
