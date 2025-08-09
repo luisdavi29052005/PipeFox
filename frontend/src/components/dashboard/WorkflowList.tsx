@@ -1,123 +1,101 @@
 
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Play, Square, Edit, Trash2, TrendingUp, AlertCircle } from 'lucide-react'
+import { Zap, TrendingUp, Users, Activity, Play, Square } from 'lucide-react'
+import { getWorkflows, startWorkflow, stopWorkflow } from '../../lib/api'
 
 interface WorkflowNode {
   id: string
-  group_url: string
   group_name: string
   is_active: boolean
-  keywords?: string[]
 }
 
 interface Workflow {
   id: string
   name: string
-  status: 'running' | 'stopped' | 'created'
+  status: string
   workflow_nodes: WorkflowNode[]
 }
 
-interface WorkflowListProps {
-  workflows: Workflow[]
-  onStart: (id: string) => void
-  onStop: (id: string) => void
-  onEdit: (id: string) => void
-  isLoading?: boolean
-}
+export default function WorkflowList() {
+  const [workflows, setWorkflows] = useState<Workflow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [processingWorkflow, setProcessingWorkflow] = useState<string | null>(null)
 
-const StatusBadge = ({ status }: { status: string }) => {
-  const statusConfig = {
-    running: {
-      color: 'bg-green-100 text-green-800 border-green-200',
-      icon: <Play className="w-3 h-3" />,
-      text: 'Ativo'
-    },
-    stopped: {
-      color: 'bg-red-100 text-red-800 border-red-200',
-      icon: <Square className="w-3 h-3" />,
-      text: 'Parado'
-    },
-    created: {
-      color: 'bg-gray-100 text-gray-800 border-gray-200',
-      icon: <AlertCircle className="w-3 h-3" />,
-      text: 'Criado'
+  useEffect(() => {
+    loadWorkflows()
+  }, [])
+
+  const loadWorkflows = async () => {
+    try {
+      setLoading(true)
+      const response = await getWorkflows()
+      setWorkflows((response || []).slice(0, 5)) // Show only 5 most recent
+    } catch (error) {
+      console.error('Error loading workflows:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.created
+  const handleToggleWorkflow = async (workflowId: string, currentStatus: string) => {
+    try {
+      setProcessingWorkflow(workflowId)
+      
+      if (currentStatus === 'running') {
+        await stopWorkflow(workflowId)
+      } else {
+        await startWorkflow(workflowId)
+      }
+      
+      await loadWorkflows()
+    } catch (error) {
+      console.error('Error toggling workflow:', error)
+    } finally {
+      setProcessingWorkflow(null)
+    }
+  }
 
-  return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${config.color}`}>
-      {config.icon}
-      <span className="ml-1">{config.text}</span>
-    </span>
-  )
-}
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'running':
+        return 'text-green-600 dark:text-green-400'
+      case 'stopped':
+        return 'text-red-600 dark:text-red-400'
+      default:
+        return 'text-gray-600 dark:text-gray-400'
+    }
+  }
 
-const WorkflowSkeleton = () => (
-  <tr className="animate-pulse">
-    <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-32"></div>
-    </td>
-    <td className="px-6 py-4">
-      <div className="h-6 bg-gray-200 rounded-full w-16"></div>
-    </td>
-    <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-12"></div>
-    </td>
-    <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-12"></div>
-    </td>
-    <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-16"></div>
-    </td>
-    <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-16"></div>
-    </td>
-    <td className="px-6 py-4">
-      <div className="flex space-x-2">
-        <div className="h-8 w-8 bg-gray-200 rounded"></div>
-        <div className="h-8 w-8 bg-gray-200 rounded"></div>
-        <div className="h-8 w-8 bg-gray-200 rounded"></div>
-      </div>
-    </td>
-  </tr>
-)
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'running':
+        return <Activity className="w-4 h-4 text-green-500" />
+      case 'stopped':
+        return <Square className="w-4 h-4 text-red-500" />
+      default:
+        return <Zap className="w-4 h-4 text-gray-500" />
+    }
+  }
 
-export default function WorkflowList({ 
-  workflows, 
-  onStart, 
-  onStop, 
-  onEdit,
-  isLoading = false 
-}: WorkflowListProps) {
-  if (isLoading) {
+  if (loading) {
     return (
       <motion.div
-        className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden"
+        className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg p-6"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Nome</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Grupos</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Keywords</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Posts/h</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Erros/h</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <WorkflowSkeleton key={index} />
-              ))}
-            </tbody>
-          </table>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Workflows Recentes
+        </h3>
+        <div className="space-y-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+            </div>
+          ))}
         </div>
       </motion.div>
     )
@@ -126,7 +104,7 @@ export default function WorkflowList({
   if (workflows.length === 0) {
     return (
       <motion.div
-        className="bg-white rounded-2xl border border-gray-100 shadow-lg p-12 text-center"
+        className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg p-12 text-center"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
@@ -139,14 +117,14 @@ export default function WorkflowList({
         >
           <TrendingUp className="w-8 h-8 text-white" />
         </motion.div>
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
           Nenhum workflow encontrado
         </h3>
-        <p className="text-gray-600 mb-6">
+        <p className="text-gray-600 dark:text-gray-400 mb-6">
           Comece criando seu primeiro workflow para automatizar suas tarefas no Facebook
         </p>
         <motion.button
-          onClick={() => window.location.href = '/workflow/create'}
+          onClick={() => window.location.href = '/workflows/create'}
           className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-semibold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -160,109 +138,72 @@ export default function WorkflowList({
 
   return (
     <motion.div
-      className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden"
+      className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg p-6"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Nome</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Grupos</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Keywords</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Posts/h</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Erros/h</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {workflows.map((workflow, index) => {
-              const activeGroups = workflow.workflow_nodes.filter(n => n.is_active).length
-              const totalKeywords = workflow.workflow_nodes.reduce((acc, n) => acc + (n.keywords?.length || 0), 0)
-              const postsPerHour = Math.floor(Math.random() * 50) + 10 // Mock data
-              const errorsPerHour = Math.floor(Math.random() * 3) // Mock data
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Workflows Recentes
+        </h3>
+        <motion.button
+          onClick={() => window.location.href = '/workflows'}
+          className="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 text-sm font-medium"
+          whileHover={{ scale: 1.05 }}
+        >
+          Ver todos
+        </motion.button>
+      </div>
 
-              return (
-                <motion.tr
-                  key={workflow.id}
-                  className="hover:bg-gray-50 transition-colors duration-200"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: index * 0.1 }}
-                >
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-gray-900">{workflow.name}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <StatusBadge status={workflow.status} />
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm text-gray-900 font-medium">{activeGroups}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm text-gray-900 font-medium">{totalKeywords}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm text-green-600 font-medium">{postsPerHour}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`text-sm font-medium ${errorsPerHour > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                      {errorsPerHour}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center space-x-2">
-                      {workflow.status === 'running' ? (
-                        <motion.button
-                          onClick={() => onStop(workflow.id)}
-                          className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition-colors duration-200"
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                        >
-                          <Square className="w-4 h-4" />
-                        </motion.button>
-                      ) : (
-                        <motion.button
-                          onClick={() => onStart(workflow.id)}
-                          className="p-2 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition-colors duration-200"
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                        >
-                          <Play className="w-4 h-4" />
-                        </motion.button>
-                      )}
-                      
-                      <motion.button
-                        onClick={() => onEdit(workflow.id)}
-                        className="p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition-colors duration-200"
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </motion.button>
-                      
-                      <motion.button
-                        onClick={() => {
-                          if (confirm('Tem certeza que deseja deletar este workflow?')) {
-                            // Handle delete
-                          }
-                        }}
-                        className="p-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-red-100 hover:text-red-600 transition-colors duration-200"
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </motion.button>
-                    </div>
-                  </td>
-                </motion.tr>
-              )
-            })}
-          </tbody>
-        </table>
+      <div className="space-y-4">
+        {workflows.map((workflow, index) => (
+          <motion.div
+            key={workflow.id}
+            className="flex items-center justify-between p-4 rounded-xl border border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3, delay: index * 0.1 }}
+          >
+            <div className="flex items-center space-x-4">
+              <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
+                {getStatusIcon(workflow.status)}
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white">
+                  {workflow.name}
+                </h4>
+                <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                  <Users className="w-3 h-3" />
+                  <span>{workflow.workflow_nodes.length} grupos</span>
+                  <span className={`font-medium ${getStatusColor(workflow.status)}`}>
+                    • {workflow.status === 'running' ? 'Executando' : workflow.status === 'stopped' ? 'Parado' : 'Criado'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <motion.button
+              onClick={() => handleToggleWorkflow(workflow.id, workflow.status)}
+              disabled={processingWorkflow === workflow.id}
+              className={`p-2 rounded-lg transition-colors ${
+                workflow.status === 'running'
+                  ? 'bg-red-100 hover:bg-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400'
+                  : 'bg-green-100 hover:bg-green-200 dark:bg-green-900/20 dark:hover:bg-green-900/40 text-green-600 dark:text-green-400'
+              } ${processingWorkflow === workflow.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              {processingWorkflow === workflow.id ? (
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : workflow.status === 'running' ? (
+                <Square className="w-4 h-4" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+            </motion.button>
+          </motion.div>
+        ))}
       </div>
     </motion.div>
   )
