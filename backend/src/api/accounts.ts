@@ -190,4 +190,43 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 
+// GET /api/accounts/stats
+router.get('/stats', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const { data: accounts, error } = await supabase
+      .from('accounts')
+      .select('status')
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    const stats = accounts.reduce((acc, account) => {
+      acc.total++;
+      switch (account.status) {
+        case 'ready':
+          acc.connected++;
+          break;
+        case 'not_ready':
+          acc.disconnected++;
+          break;
+        case 'error':
+        case 'conflict':
+          acc.error++;
+          break;
+      }
+      return acc;
+    }, { total: 0, connected: 0, disconnected: 0, error: 0 });
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error fetching account stats:', error);
+    res.status(500).json({ success: false, error: 'Erro interno do servidor' });
+  }
+});
+
 export default router;

@@ -231,4 +231,43 @@ router.post('/:id/stop', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/workflows/stats
+router.get('/stats', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Total workflows
+    const { count: totalWorkflows } = await supabase
+      .from('workflows')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    // Active workflows
+    const { count: activeWorkflows } = await supabase
+      .from('workflows')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'running');
+
+    // Total groups
+    const { count: totalGroups } = await supabase
+      .from('workflow_nodes')
+      .select('workflow_id!inner(user_id)', { count: 'exact', head: true })
+      .eq('workflow_id.user_id', userId)
+      .eq('is_active', true);
+
+    res.json({
+      success: true,
+      data: {
+        total: totalWorkflows || 0,
+        active: activeWorkflows || 0,
+        totalGroups: totalGroups || 0
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching workflow stats:', error);
+    res.status(500).json({ success: false, error: 'Erro interno do servidor' });
+  }
+});
+
 export default router;

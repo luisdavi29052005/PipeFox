@@ -2,7 +2,7 @@
 export const apiBase =
   (import.meta as any).env?.VITE_API_URL ||
   (window.location.hostname.includes("replit")
-    ? `https://${window.location.hostname}`
+    ? `https://${window.location.hostname.replace('5173', '5000')}`
     : "http://localhost:5000");
 
 type ReqInit = Omit<RequestInit, 'body'> & { json?: any };
@@ -85,6 +85,199 @@ export function debugAccountSession(id: string) {
   return req(`/api/accounts/${id}/debug-session`, { method: "GET" });
 }
 
+// Delete account (unified function)
+export const deleteAccount = async (accountId: string) => {
+  const response = await fetch(`${apiBase}/api/accounts/${accountId}`, {
+    method: 'DELETE',
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao deletar conta')
+  }
+
+  return response.json()
+}
+
+// Dashboard API
+export const getDashboardSummary = async () => {
+  const response = await fetch(`${apiBase}/api/dashboard/summary`, {
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao buscar resumo do dashboard')
+  }
+
+  return response.json()
+}
+
+export const getDashboardTrends = async (days: number = 7) => {
+  const response = await fetch(`${apiBase}/api/dashboard/trends?days=${days}`, {
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao buscar tendências')
+  }
+
+  return response.json()
+}
+
+export const getTopGroups = async (limit: number = 10) => {
+  const response = await fetch(`${apiBase}/api/dashboard/top-groups?limit=${limit}`, {
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao buscar grupos principais')
+  }
+
+  return response.json()
+}
+
+// Accounts stats
+export const getAccountsStats = async () => {
+  const response = await fetch(`${apiBase}/api/accounts/stats`, {
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao buscar estatísticas das contas')
+  }
+
+  return response.json()
+}
+
+// Workflows stats
+export const getWorkflowsStats = async () => {
+  const response = await fetch(`${apiBase}/api/workflows/stats`, {
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao buscar estatísticas dos workflows')
+  }
+
+  return response.json()
+}
+
+// Plans API
+export const getPlans = async () => {
+  const response = await fetch(`${apiBase}/api/plans`, {
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao buscar planos')
+  }
+
+  return response.json()
+}
+
+export const checkout = async (planId: string, paymentMethod: string) => {
+  const response = await fetch(`${apiBase}/api/checkout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    credentials: 'include',
+    body: JSON.stringify({ planId, paymentMethod })
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao processar pagamento')
+  }
+
+  return response.json()
+}
+
+export const getSubscription = async () => {
+  const response = await fetch(`${apiBase}/api/subscription`, {
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao buscar assinatura')
+  }
+
+  return response.json()
+}
+
+export const cancelSubscription = async () => {
+  const response = await fetch(`${apiBase}/api/subscription/cancel`, {
+    method: 'POST',
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao cancelar assinatura')
+  }
+
+  return response.json()
+}
+
+// Credits API
+export const getCredits = async () => {
+  const response = await fetch(`${apiBase}/api/credits`, {
+    credentials: 'include'
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao buscar créditos')
+  }
+
+  return response.json()
+}
+
+export const useCredits = async (amount: number = 1) => {
+  const response = await fetch(`${apiBase}/api/credits/use`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    credentials: 'include',
+    body: JSON.stringify({ amount })
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao usar créditos')
+  }
+
+  return response.json()
+}
+
+export const addCredits = async (amount: number) => {
+  const response = await fetch(`${apiBase}/api/credits/add`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    credentials: 'include',
+    body: JSON.stringify({ amount })
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Erro ao adicionar créditos')
+  }
+
+  return response.json()
+}
+
+
 /* =========== WORKFLOWS =========== */
 export function getWorkflows() {
   return req("/api/workflows", { method: "GET" });
@@ -144,10 +337,6 @@ export function deleteWorkflowNode(nodeId: string) {
 
 export function deleteWorkflow(workflowId: string) {
   return req(`/api/workflows/${workflowId}`, { method: 'DELETE' });
-}
-
-export function deleteFbAccount(accountId: string) {
-  return req(`/api/accounts/${accountId}`, { method: 'DELETE' });
 }
 
 /* =========== HEALTH =========== */
