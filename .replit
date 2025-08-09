@@ -8,7 +8,7 @@ channel = "stable-25_05"
 run = ["sh", "-c", "node index.js"]
 
 [workflows]
-runButton = "Backend Dev Server"
+runButton = "Start Backend & Frontend"
 
 [[workflows.workflow]]
 name = "Backend Dev Server"
@@ -54,3 +54,20 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd backend && node test/setup-test-env.js && echo \"Now get your token:\" && echo \"node test/getToken.js your@email.com yourpassword\""
+
+[[workflows.workflow]]
+name = "Start Backend & Frontend"
+author = 41721056
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && npm install && npm run dev"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd frontend && npm install && npm run dev"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
