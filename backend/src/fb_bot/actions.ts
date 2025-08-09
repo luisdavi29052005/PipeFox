@@ -83,7 +83,7 @@ export async function collectShots(page: Page, node: WorkflowNode, webhookUrl?: 
 
       // Envia para n8n para análise
       if (webhookUrl) {
-        await sendToN8n(lead.id, png, webhookUrl, node.prompt);
+        await sendToN8n(lead.id, png, webhookUrl, node.prompt || '');
       }
 
       seen.add(meta.id);

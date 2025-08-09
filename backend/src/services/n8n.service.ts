@@ -1,29 +1,24 @@
 import fetch from 'node-fetch';
-import FormData from 'form-data';
 
-export async function sendToN8n(leadId: string, imageBuffer: Buffer, webhookUrl?: string) {
+export async function sendToN8n(leadId: string, imageBuffer: Buffer, webhookUrl?: string, prompt = '') {
   if (!webhookUrl) {
     console.warn(`[n8n] Webhook URL não configurado para o workflow. Lead ${leadId} não será processado.`);
     return;
   }
 
-  const form = new FormData();
-  form.append('leadId', leadId);
-    form.append('prompt', prompt);
-  form.append('image', imageBuffer, {
-    contentType: 'image/png',
-    filename: 'post-screenshot.png'
-  });
-
-  // Adiciona o prompt do workflow/node se existir
-  // (Você pode expandir isso para passar mais dados)
-  // form.append('prompt', 'Seja amigável e ofereça ajuda para restaurar a foto.');
+  const payload = {
+    id: leadId,
+    prompt,
+    screenshot: imageBuffer.toString('base64'),
+    screenshot_type: 'png',
+    timestamp: new Date().toISOString()
+  };
 
   try {
     const response = await fetch(webhookUrl, {
       method: 'POST',
-      body: form,
-      headers: form.getHeaders()
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {

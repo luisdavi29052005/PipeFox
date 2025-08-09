@@ -1,7 +1,17 @@
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { me, logout, getAccounts, getWorkflows, loginAccount, logoutAccount, createAccount, startWorkflow, stopWorkflow, getWorkflowNodes } from '../lib/api'
+import { motion } from 'framer-motion'
+import { Activity, AlertTriangle, RefreshCw } from 'lucide-react'
+import { me, getStatsMock } from '../lib/api'
+import Layout from '../components/layout/Layout'
+import Sidebar from '../components/dashboard/Sidebar'
+import StatsCards from '../components/dashboard/StatsCards'
+import TrendChart from '../components/dashboard/TrendChart'
+import ErrorsPanel from '../components/dashboard/ErrorsPanel'
+import AccountsHealth from '../components/dashboard/AccountsHealth'
+import Alert from '../components/ui/Alert'
+import Button from '../components/ui/Button'
 
 interface User {
   id: string
@@ -9,361 +19,322 @@ interface User {
   name?: string
 }
 
-interface Account {
-  id: string
-  name: string
-  status: 'ready' | 'not_ready' | 'logging_in' | 'error' | 'conflict'
-  fb_user_id?: string
-  created_at: string
-  updated_at: string
-}
-
-interface WorkflowNode {
-  id: string
-  group_url: string
-  group_name: string
-  is_active: boolean
-  keywords?: string[]
-}
-
-interface Workflow {
-  id: string
-  name: string
-  status: 'created' | 'running' | 'stopped'
-  account_id: string
-  webhook_url?: string
-  workflow_nodes: WorkflowNode[]
-  created_at: string
+interface DashboardStats {
+  totals: {
+    workflows_active: number;
+    groups_monitored: number;
+    keywords_configured: number;
+    posts_24h: number;
+    comments_24h: number;
+    success_rate_24h: number;
+    backlog: number;
+  };
+  trend_30d: Array<{
+    day: string;
+    posts: number;
+    comments: number;
+  }>;
+  errors_24h: Array<{
+    reason: string;
+    count: number;
+  }>;
+  nodes_top_24h: Array<{
+    id: string;
+    node: string;
+    posts: number;
+    comments: number;
+    success_rate: number;
+  }>;
+  accounts_health: Array<{
+    id: string;
+    name: string;
+    status: string;
+    health: string;
+    last_seen_at: string;
+    errors_24h: number;
+  }>;
+  economy: {
+    cost_total_30d: number;
+    cost_per_comment: number;
+    tokens_30d: number;
+  };
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [workflows, setWorkflows] = useState<Workflow[]>([])
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
 
-  useEffect(() => {
-    loadDashboardData()
-  }, [])
-
-  const loadDashboardData = async () => {
+  const loadStats = async (showRefreshIndicator = false) => {
     try {
-      // Load user data
-      try {
-        const userData = await me()
-        setUser(userData.user)
-      } catch (err) {
-        console.error('Error loading user:', err)
-      }
-
-      // Load accounts data
-      try {
-        const accountsData = await getAccounts()
-        setAccounts(accountsData)
-      } catch (err) {
-        console.error('Error loading accounts:', err)
-      }
-
-      // Load workflows data
-      try {
-        const workflowsData = await getWorkflows()
-        // Add workflow_nodes to each workflow for compatibility
-        const workflowsWithNodes = await Promise.all(
-          workflowsData.map(async (workflow: any) => {
-            try {
-              const nodes = await getWorkflowNodes(workflow.id)
-              return { ...workflow, workflow_nodes: nodes }
-            } catch (err) {
-              console.error('Error loading workflow nodes:', err)
-              return { ...workflow, workflow_nodes: [] }
-            }
-          })
-        )
-        setWorkflows(workflowsWithNodes)
-      } catch (err) {
-        console.error('Error loading workflows:', err)
-      }
-    } catch (err) {
-      console.error('Error loading dashboard:', err)
+      if (showRefreshIndicator) setRefreshing(true)
+      else setLoading(true)
+      
+      setError(null)
+      
+      // Use mock data for development
+      const statsData = await getStatsMock()
+      setStats(statsData)
+    } catch (err: any) {
+      console.error('Failed to load stats:', err)
+      setError('Falha ao carregar estatísticas')
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
   }
 
-  const handleLogout = async () => {
-    try {
-      await logout()
-      navigate('/login')
-    } catch (err) {
-      console.error('Logout error:', err)
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const userData = await me()
+        setUser(userData)
+        await loadStats()
+      } catch (error) {
+        console.error('Failed to load user data:', error)
+        navigate('/login')
+      }
     }
-  }
 
-  const handleAccountLogin = async (accountId: string) => {
-    try {
-      await loginAccount(accountId)
-      alert('Janela de login aberta. Faça login no Facebook e feche a janela quando terminar.')
-      setTimeout(() => refreshData(), 2000)
-    } catch (err) {
-      console.error('Login error:', err)
-    }
-  }
+    loadData()
+  }, [navigate])
 
-  const handleAccountLogout = async (accountId: string) => {
-    try {
-      await logoutAccount(accountId)
-      refreshData()
-    } catch (err) {
-      console.error('Logout error:', err)
-    }
-  }
-
-  const handleWorkflowStart = async (workflowId: string) => {
-    try {
-      await startWorkflow(workflowId)
-      refreshData()
-    } catch (err: any) {
-      console.error('Start workflow error:', err)
-      alert(`Erro: ${err.message}`)
-    }
-  }
-
-  const handleWorkflowStop = async (workflowId: string) => {
-    try {
-      await stopWorkflow(workflowId)
-      refreshData()
-    } catch (err) {
-      console.error('Stop workflow error:', err)
-    }
-  }
-
-  const refreshData = () => {
-    setRefreshing(true)
-    loadDashboardData()
-  }
-
-  const handleCreateAccount = async () => {
-    const accountName = prompt('Digite o nome da nova conta:')
-    if (!accountName) return
-
-    try {
-      await createAccount({ name: accountName })
-      refreshData()
-      alert('Conta criada com sucesso!')
-    } catch (err: any) {
-      console.error('Create account error:', err)
-      alert(`Erro ao criar conta: ${err.message}`)
-    }
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'ready': return '🟢'
-      case 'running': return '🟢'
-      case 'not_ready': return '🔴'
-      case 'stopped': return '🔴'
-      case 'logging_in': return '🟡'
-      case 'created': return '🟡'
-      default: return '⚪'
-    }
-  }
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'ready': return 'ready'
-      case 'running': return 'Ativo'
-      case 'not_ready': return 'not_ready'
-      case 'stopped': return 'Parado'
-      case 'logging_in': return 'fazendo login...'
-      case 'created': return 'Criado'
-      default: return status
-    }
-  }
-
-  // Calculate metrics
-  const activeWorkflows = workflows.filter(w => w.status === 'running').length
-  const totalGroups = workflows.reduce((acc, w) => acc + w.workflow_nodes.filter(n => n.is_active).length, 0)
-  const totalKeywords = workflows.reduce((acc, w) => 
-    acc + w.workflow_nodes.reduce((nodeAcc, n) => nodeAcc + (n.keywords?.length || 0), 0), 0
-  )
+  // Calculate health alerts
+  const healthAlerts = stats ? [
+    ...(stats.totals.success_rate_24h < 60 ? ['Taxa de sucesso baixa (< 60%)'] : []),
+    ...(stats.accounts_health.filter(acc => acc.health !== 'ok').length > 0 ? ['Contas com problemas'] : []),
+    ...(stats.errors_24h.length > 0 ? ['Erros detectados nas últimas 24h'] : [])
+  ] : []
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg">Carregando dashboard...</div>
-      </div>
+      <Layout showHeader={false}>
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+          <motion.div
+            className="text-center"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.6 }}
+          >
+            <motion.div
+              className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-orange-400 to-red-500 rounded-2xl flex items-center justify-center"
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            >
+              <Activity className="w-8 h-8 text-white" />
+            </motion.div>
+            <div className="text-lg font-medium text-gray-700 dark:text-gray-300">Carregando seu dashboard...</div>
+          </motion.div>
+        </div>
+      </Layout>
+    )
+  }
+
+  if (!stats) {
+    return (
+      <Layout showHeader={false}>
+        <div className="flex h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+          <Sidebar />
+          <div className="flex-1 overflow-auto">
+            <div className="p-6">
+              <Alert variant="error" title="Erro ao carregar dados">
+                {error || 'Falha ao carregar estatísticas do dashboard'}
+                <div className="mt-4">
+                  <Button onClick={() => loadStats()} variant="outline" size="sm">
+                    Tentar novamente
+                  </Button>
+                </div>
+              </Alert>
+            </div>
+          </div>
+        </div>
+      </Layout>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border-l-4 border-orange-500">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-                🦊 PipeFox Dashboard
-              </h1>
-              <p className="text-gray-600 mt-1">
-                Olá, {user?.name || user?.email}! 
-                <button 
-                  onClick={handleLogout}
-                  className="ml-2 text-orange-600 hover:text-orange-700 underline text-sm"
-                >
-                  [Logoff]
-                </button>
-              </p>
-            </div>
-            <button
-              onClick={refreshData}
-              disabled={refreshing}
-              className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
+    <Layout showHeader={false}>
+      <div className="flex h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+        <Sidebar />
+        
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 space-y-6">
+            {/* Header */}
+            <motion.div
+              className="flex items-center justify-between"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
             >
-              {refreshing ? 'Atualizando...' : 'Atualizar'}
-            </button>
-          </div>
-        </div>
-
-        {/* Quick Metrics */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">=== Métricas rápidas ===</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-            <div>Leads capturados: <span className="font-bold">-</span></div>
-            <div>Novos hoje: <span className="font-bold">-</span></div>
-            <div>Comentários feitos: <span className="font-bold">-</span></div>
-            <div>Grupos ativos: <span className="font-bold">{totalGroups}</span></div>
-            <div>Workflows ativos: <span className="font-bold">{activeWorkflows}</span></div>
-            <div>Total keywords: <span className="font-bold">{totalKeywords}</span></div>
-          </div>
-        </div>
-
-        {/* Facebook Accounts */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">=== Contas do Facebook ===</h2>
-          <div className="space-y-3">
-            {accounts.map(account => (
-              <div key={account.id} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                <div className="flex items-center space-x-3">
-                  <span>{getStatusIcon(account.status)}</span>
-                  <span className="font-medium">{account.name}</span>
-                  <span className="text-sm text-gray-500">({getStatusText(account.status)})</span>
-                </div>
-                <div className="space-x-2">
-                  {account.status === 'ready' ? (
-                    <button
-                      onClick={() => handleAccountLogout(account.id)}
-                      className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
-                    >
-                      Logout
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleAccountLogin(account.id)}
-                      disabled={account.status === 'logging_in'}
-                      className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50"
-                    >
-                      {account.status === 'logging_in' ? 'Logando...' : 'Login'}
-                    </button>
-                  )}
-                </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  Dashboard
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Visão geral do seu PipeFox
+                </p>
               </div>
-            ))}
-            <div className="text-center">
-              <button 
-                onClick={handleCreateAccount}
-                className="text-orange-600 hover:text-orange-700 text-sm"
-              >
-                + Conectar nova conta
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Workflows */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">=== Workflows ===</h2>
-          <div className="space-y-3">
-            {workflows.map(workflow => {
-              const activeNodes = workflow.workflow_nodes.filter(n => n.is_active)
-              const keywordCount = activeNodes.reduce((acc, n) => acc + (n.keywords?.length || 0), 0)
               
-              return (
-                <div key={workflow.id} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                  <div className="flex items-center space-x-4">
-                    <span>{getStatusIcon(workflow.status)}</span>
-                    <button
-                      onClick={() => navigate(`/workflow/${workflow.id}`)}
-                      className="font-medium text-left hover:text-orange-600 transition-colors"
-                    >
-                      {workflow.name}
-                    </button>
-                    <span className="text-sm text-gray-500">
-                      {getStatusText(workflow.status)} | {activeNodes.length} grupos | {keywordCount} palavras-chave
-                    </span>
+              <Button
+                onClick={() => loadStats(true)}
+                disabled={refreshing}
+                variant="outline"
+                size="sm"
+                className="flex items-center space-x-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                <span>Atualizar</span>
+              </Button>
+            </motion.div>
+
+            {/* Health Alerts */}
+            {healthAlerts.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <Alert variant="warning" title="Atenção">
+                  <div className="space-y-1">
+                    {healthAlerts.map((alert, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span>{alert}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    {workflow.status === 'running' ? (
-                      <button
-                        onClick={() => handleWorkflowStop(workflow.id)}
-                        className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
-                        title="Parar workflow"
+                </Alert>
+              </motion.div>
+            )}
+
+            {/* Stats Cards */}
+            <StatsCards stats={stats.totals} />
+
+            {/* Charts and Panels Grid */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              {/* Trend Chart - Takes 2 columns on xl screens */}
+              <div className="xl:col-span-2">
+                <TrendChart data={stats.trend_30d} />
+              </div>
+              
+              {/* Errors Panel */}
+              <ErrorsPanel errors={stats.errors_24h} />
+            </div>
+
+            {/* Bottom Panels */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Top Nodes Table */}
+              <motion.div
+                className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200/50 dark:border-gray-700/50"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.5 }}
+              >
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Top Grupos 24h
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Grupos com mais atividade
+                  </p>
+                </div>
+
+                {stats.nodes_top_24h.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                      <Activity className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-400">Nenhuma atividade nas últimas 24h</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {stats.nodes_top_24h.map((node, index) => (
+                      <motion.div
+                        key={node.id}
+                        className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.3, delay: index * 0.1 }}
                       >
-                        ⏸
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleWorkflowStart(workflow.id)}
-                        className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200"
-                        title="Iniciar workflow"
-                      >
-                        ▶
-                      </button>
-                    )}
+                        <div className="flex-1">
+                          <h4 className="font-medium text-gray-900 dark:text-white">
+                            {node.node}
+                          </h4>
+                          <div className="flex items-center space-x-4 mt-1">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">
+                              {node.posts} posts
+                            </span>
+                            <span className="text-sm text-gray-600 dark:text-gray-400">
+                              {node.comments} comentários
+                            </span>
+                            <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                              {node.success_rate}% sucesso
+                            </span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+
+              {/* Accounts Health */}
+              <AccountsHealth accounts={stats.accounts_health} />
+            </div>
+
+            {/* Economy Panel - Only show if there's cost data */}
+            {stats.economy.cost_total_30d > 0 && (
+              <motion.div
+                className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200/50 dark:border-gray-700/50"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.6 }}
+              >
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Economia
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Custos e tokens usados
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                      ${stats.economy.cost_total_30d.toFixed(2)}
+                    </div>
+                    <div className="text-sm text-blue-600 dark:text-blue-400">
+                      Custo Total 30d
+                    </div>
+                  </div>
+                  
+                  <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                      ${stats.economy.cost_per_comment.toFixed(3)}
+                    </div>
+                    <div className="text-sm text-green-600 dark:text-green-400">
+                      Por Comentário
+                    </div>
+                  </div>
+                  
+                  <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                      {stats.economy.tokens_30d.toLocaleString()}
+                    </div>
+                    <div className="text-sm text-purple-600 dark:text-purple-400">
+                      Tokens 30d
+                    </div>
                   </div>
                 </div>
-              )
-            })}
-            <div className="text-center">
-              <button 
-                onClick={() => navigate('/workflow/create')}
-                className="text-orange-600 hover:text-orange-700 text-sm"
-              >
-                + Novo workflow
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Latest Leads */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">=== Últimos Leads ===</h2>
-          <div className="space-y-3">
-            <div className="text-center py-8 text-gray-500">
-              <p>Nenhum lead capturado ainda.</p>
-              <p className="text-sm mt-2">Os leads aparecerão aqui quando os workflows estiverem ativos.</p>
-            </div>
-            <div className="text-center">
-              <button className="text-orange-600 hover:text-orange-700 text-sm">
-                Ver todos os leads →
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Logs */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold mb-4">=== Logs recentes ===</h2>
-          <div className="space-y-2 text-sm font-mono">
-            <div className="text-center py-4 text-gray-500">
-              Nenhum log disponível ainda.
-            </div>
+              </motion.div>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </Layout>
   )
 }
