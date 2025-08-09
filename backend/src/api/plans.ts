@@ -67,13 +67,14 @@ router.post('/checkout', requireAuth, async (req, res) => {
 
     if (subError) throw subError;
 
-    // Create payment record
+    // Create payment record - convert USD to BRL (approximate rate 5.5)
+    const brlAmount = plan.currency === 'usd' ? plan.price * 5.5 : plan.price;
     const { error: paymentError } = await supabase
       .from('payments')
       .insert({
         subscription_id: subscription.id,
-        amount: plan.price,
-        currency: plan.currency,
+        amount: brlAmount,
+        currency: 'brl',
         payment_method: paymentMethod,
         status: 'paid'
       });

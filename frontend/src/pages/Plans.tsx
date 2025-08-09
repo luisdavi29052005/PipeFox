@@ -189,7 +189,7 @@ export default function Plans() {
                         </h3>
                         <div className="mb-4">
                           <span className="text-4xl font-bold text-gray-900 dark:text-white">
-                            R$ {plan.price.toFixed(2)}
+                            R$ {plan.currency === 'usd' ? (plan.price * 5.5).toFixed(2) : plan.price.toFixed(2)}
                           </span>
                           <span className="text-gray-600 dark:text-gray-400 ml-2">
                             /mês
